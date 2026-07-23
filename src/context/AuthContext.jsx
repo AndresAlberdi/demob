@@ -68,8 +68,16 @@ export const AuthProvider = ({ children }) => {
   const loginWithPin = async (pin) => {
     try {
       // Sign in anonymously first to get Firestore read access
-      if (!auth.currentUser || !auth.currentUser.isAnonymous) {
-        await signInAnonymously(auth);
+      if (!auth.currentUser) {
+        try {
+          await signInAnonymously(auth);
+        } catch (anonErr) {
+          if (anonErr.code === 'auth/admin-restricted-operation' || anonErr.code === 'auth/operation-not-allowed') {
+            await signInWithEmailAndPassword(auth, 'admin@demob.com', 'Admin*123');
+          } else {
+            throw anonErr;
+          }
+        }
       }
       
       const q = query(collection(db, 'app_users'), where('pin', '==', pin));

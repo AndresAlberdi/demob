@@ -47,9 +47,9 @@ const Login = () => {
   };
 
   return (
-    <div className="login-container">
-      <div className="login-card glass-panel">
-        <div className="login-header">
+    <div className="auth-container">
+      <div className="auth-card glass-panel">
+        <div className="auth-header">
           <div className="logo-container">
             <Store className="logo-icon" size={48} />
           </div>
@@ -73,11 +73,14 @@ const Login = () => {
             <div className="form-group">
               <label>Correo Electrónico</label>
               <input 
+                id="email"
+                name="email"
                 type="email" 
                 className="input-field" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@demob.com"
+                autoComplete="email"
                 required
               />
             </div>
@@ -85,11 +88,14 @@ const Login = () => {
             <div className="form-group">
               <label>Contraseña</label>
               <input 
+                id="password"
+                name="password"
                 type="password" 
                 className="input-field" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
+                autoComplete="current-password"
                 required
               />
             </div>
@@ -115,8 +121,8 @@ const Login = () => {
                 className="input-field" 
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
-                placeholder="••••"
-                maxLength="4"
+                placeholder="••••••"
+                maxLength="6"
                 required
                 style={{textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.25rem'}}
               />
@@ -125,7 +131,7 @@ const Login = () => {
             <button 
               type="submit" 
               className="btn btn-primary btn-block"
-              disabled={isSubmitting || pin.length < 4}
+              disabled={isSubmitting || pin.length < 6}
             >
               {isSubmitting ? (
                 <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>

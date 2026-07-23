@@ -102,7 +102,7 @@ const AdminDashboard = () => {
   // --- USER MANAGEMENT ---
   const createUser = async (e) => {
     e.preventDefault();
-    if (newUser.pin.length !== 4) return alert("El PIN debe tener 4 dígitos");
+    if (newUser.pin.length !== 6) return alert("El PIN debe tener 6 dígitos");
     try {
       await addDoc(collection(db, "app_users"), {
         name: newUser.name,
@@ -123,7 +123,7 @@ const AdminDashboard = () => {
   };
 
   const updatePin = async (id) => {
-    if (editPinValue.length !== 4) return alert("El PIN debe tener 4 dígitos");
+    if (editPinValue.length !== 6) return alert("El PIN debe tener 6 dígitos");
     try {
       await updateDoc(doc(db, "app_users", id), { pin: editPinValue });
       setEditingUser(null);
@@ -325,8 +325,8 @@ const AdminDashboard = () => {
                 <input type="text" className="input-field" value={newUser.name} onChange={e=>setNewUser({...newUser, name: e.target.value})} required/>
               </div>
               <div className="form-group">
-                <label>PIN de Acceso (4 dígitos)</label>
-                <input type="text" className="input-field" maxLength="4" pattern="\d{4}" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin: e.target.value})} required/>
+                <label>PIN de Acceso (6 dígitos)</label>
+                <input type="text" className="input-field" maxLength="6" pattern="\d{6}" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin: e.target.value})} required/>
               </div>
               <button type="submit" className="btn btn-primary btn-block">Registrar Vendedor</button>
             </form>
@@ -342,9 +342,9 @@ const AdminDashboard = () => {
                     {editingUser === u.id ? (
                       <input 
                         type="text" 
-                        maxLength="4"
+                        maxLength="6"
                         className="input-field"
-                        style={{width: '80px', padding: '0.25rem', marginTop: '0.25rem'}}
+                        style={{width: '100px', padding: '0.25rem', marginTop: '0.25rem'}}
                         value={editPinValue}
                         onChange={(e) => setEditPinValue(e.target.value)}
                         placeholder="PIN"
