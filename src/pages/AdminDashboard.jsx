@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { collection, query, getDocs, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy } from 'firebase/firestore';
-import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload } from 'lucide-react';
+import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { parseAndUploadCSV } from '../utils/csvParser';
 
@@ -18,6 +18,11 @@ const AdminDashboard = () => {
   const [motivos, setMotivos] = useState([]);
   const [pendingLosses, setPendingLosses] = useState([]);
   const [sales, setSales] = useState([]);
+  const [shifts, setShifts] = useState([]);
+  const [orders, setOrders] = useState([]);
+  
+  // CSV Form State
+  const [csvHasHeader, setCsvHasHeader] = useState(true);
   
   // Form states
   const [newUser, setNewUser] = useState({ name: '', pin: '' });
@@ -54,9 +59,17 @@ const AdminDashboard = () => {
       const lSnap = await getDocs(query(collection(db, "losses"), where("status", "==", "pending")));
       setPendingLosses(lSnap.docs.map(d => ({id: d.id, ...d.data()})));
       
-      // Load sales for basic reports (limit to last 100 for demo)
+      // Load sales for basic reports
       const sSnap = await getDocs(query(collection(db, "sales")));
       setSales(sSnap.docs.map(d => ({id: d.id, ...d.data()})));
+      
+      // Load shifts for monitoring
+      const shSnap = await getDocs(query(collection(db, "shifts")));
+      setShifts(shSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.startTime?.seconds || 0) - (a.startTime?.seconds || 0)));
+      
+      // Load orders / expenses
+      const oSnap = await getDocs(query(collection(db, "orders")));
+      setOrders(oSnap.docs.map(d => ({id: d.id, ...d.data()})));
       
     } catch (e) {
       console.error(e);
@@ -76,7 +89,7 @@ const AdminDashboard = () => {
     if (!file) return;
     setIsLoading(true);
     try {
-      const result = await parseAndUploadCSV(file);
+      const result = await parseAndUploadCSV(file, csvHasHeader);
       alert(result);
       loadData();
     } catch (error) {
@@ -181,12 +194,36 @@ const AdminDashboard = () => {
   const totalCash = sales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
   const totalQR = sales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
 
+  // Active shift calculations
+  const activeShiftDoc = shifts.find(s => s.status === 'open');
+  let activeShiftCash = 0;
+  if (activeShiftDoc) {
+    const shiftSales = sales.filter(s => s.shiftId === activeShiftDoc.id && s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
+    const shiftExpenses = orders.filter(o => o.shiftId === activeShiftDoc.id).reduce((acc, o) => acc + o.amount, 0);
+    activeShiftCash = (activeShiftDoc.startCash || 0) + shiftSales - shiftExpenses;
+  }
+
   return (
     <div className="dashboard-layout">
       <div className="dashboard-header flex-between">
         <div>
           <h2>Panel de Administración</h2>
           <p>Administrador: {currentUser?.email}</p>
+          {activeShiftDoc && (
+            <div style={{marginTop: '0.5rem'}}>
+              <span style={{
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                color: 'white',
+                padding: '0.35rem 0.85rem',
+                borderRadius: '20px',
+                fontWeight: '700',
+                fontSize: '0.9rem',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+              }}>
+                💰 Caja Actual (Turno Activo: {activeShiftDoc.vendorName}): Bs. {activeShiftCash.toFixed(2)}
+              </span>
+            </div>
+          )}
         </div>
         <div style={{display: 'flex', gap: '1rem'}}>
           <Link to="/vendedor" className="btn btn-secondary">Ir a POS</Link>
@@ -202,6 +239,9 @@ const AdminDashboard = () => {
         </div>
         <div className={`tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>
           <Package size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Inventario & Productos
+        </div>
+        <div className={`tab ${activeTab === 'shifts' ? 'active' : ''}`} onClick={() => setActiveTab('shifts')}>
+          <Clock size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Seguimiento de Turnos
         </div>
         <div className={`tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
           <Users size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Vendedores
@@ -258,12 +298,51 @@ const AdminDashboard = () => {
 
       {!isLoading && activeTab === 'inventory' && (
         <div className="card glass-panel">
-          <div className="flex-between" style={{marginBottom: '1.5rem'}}>
+          <div className="flex-between" style={{marginBottom: '1rem'}}>
             <h3>Gestión de Inventario y Productos</h3>
-            <label className="btn btn-primary" style={{cursor: 'pointer'}}>
-              <Upload size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Subir CSV
-              <input type="file" accept=".csv" style={{display: 'none'}} onChange={handleCSVUpload} />
-            </label>
+            <div style={{display: 'flex', gap: '1rem', alignItems: 'center'}}>
+              <label style={{fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer'}}>
+                <input 
+                  type="checkbox" 
+                  checked={csvHasHeader} 
+                  onChange={e => setCsvHasHeader(e.target.checked)} 
+                />
+                ¿Tiene fila de títulos/encabezados?
+              </label>
+              <label className="btn btn-primary" style={{cursor: 'pointer'}}>
+                <Upload size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Cargar CSV
+                <input type="file" accept=".csv" style={{display: 'none'}} onChange={handleCSVUpload} />
+              </label>
+            </div>
+          </div>
+
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.6)', 
+            padding: '1rem', 
+            borderRadius: '12px', 
+            marginBottom: '1.5rem',
+            border: '1px solid rgba(0,0,0,0.08)'
+          }}>
+            <h4 style={{display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--primary-color)'}}>
+              <Info size={18} /> Instrucciones y Formato de Carga CSV
+            </h4>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem'}}>
+              El archivo CSV debe tener 4 columnas (o 3 si omiten el stock). Si seleccionó "Tiene fila de títulos", la primera fila será ignorada.
+            </p>
+            <div style={{
+              fontFamily: 'monospace', 
+              background: '#1e293b', 
+              color: '#f8fafc', 
+              padding: '0.75rem 1rem', 
+              borderRadius: '8px', 
+              fontSize: '0.8rem',
+              overflowX: 'auto'
+            }}>
+              <div>CATEGORIA,PRODUCTO,PRECIO,STOCK</div>
+              <div>CON GAS,Coca-Cola 2L,13.50,10</div>
+              <div>PIQUEOS,Papas Fritas,5.00,15</div>
+              <div>SIN GAS,Agua Vital 600ml,5.50,20</div>
+            </div>
           </div>
           
           <table style={{width: '100%', borderCollapse: 'collapse'}}>
@@ -312,6 +391,94 @@ const AdminDashboard = () => {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!isLoading && activeTab === 'shifts' && (
+        <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+          {/* Active Shift Card */}
+          <div className="card glass-panel" style={{borderLeft: '4px solid var(--secondary-color)'}}>
+            <h3><Activity size={20} style={{color: 'var(--secondary-color)'}} /> Turno Activo Actual</h3>
+            {activeShiftDoc ? (
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginTop: '0.5rem'}}>
+                <div>
+                  <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Vendedor Activo</label>
+                  <h4 style={{fontSize: '1.1rem'}}>{activeShiftDoc.vendorName}</h4>
+                </div>
+                <div>
+                  <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Hora de Apertura</label>
+                  <p>{activeShiftDoc.startTime ? new Date(activeShiftDoc.startTime.toDate()).toLocaleString() : 'Reciente'}</p>
+                </div>
+                <div>
+                  <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Caja Inicial</label>
+                  <p style={{fontWeight: 'bold'}}>Bs. {(activeShiftDoc.startCash || 0).toFixed(2)}</p>
+                </div>
+                <div>
+                  <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Caja Actual (Calculada)</label>
+                  <p style={{fontWeight: 'bold', color: 'var(--secondary-color)', fontSize: '1.2rem'}}>Bs. {activeShiftCash.toFixed(2)}</p>
+                </div>
+              </div>
+            ) : (
+              <p style={{color: 'var(--text-secondary)'}}>No hay ningún turno activo en este momento. La caja se encuentra cerrada.</p>
+            )}
+          </div>
+
+          {/* Shifts History Table */}
+          <div className="card glass-panel">
+            <h3><Clock size={20} /> Historial y Seguimiento de Turnos</h3>
+            <table style={{width: '100%', borderCollapse: 'collapse', marginTop: '1rem'}}>
+              <thead>
+                <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                  <th style={{padding: '0.5rem'}}>Vendedor</th>
+                  <th style={{padding: '0.5rem'}}>Estado</th>
+                  <th style={{padding: '0.5rem'}}>Apertura</th>
+                  <th style={{padding: '0.5rem'}}>Cierre</th>
+                  <th style={{padding: '0.5rem'}}>Caja Inicial</th>
+                  <th style={{padding: '0.5rem'}}>Ventas (Ef/QR)</th>
+                  <th style={{padding: '0.5rem'}}>Esperado</th>
+                  <th style={{padding: '0.5rem'}}>Dejado/Rendido</th>
+                  <th style={{padding: '0.5rem'}}>Descuadre</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shifts.map(sh => {
+                  const isOpen = sh.status === 'open';
+                  const shiftSales = sales.filter(s => s.shiftId === sh.id);
+                  const cashSales = shiftSales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
+                  const qrSales = shiftSales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
+                  
+                  return (
+                    <tr key={sh.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>{sh.vendorName || 'Vendedor'}</td>
+                      <td style={{padding: '0.5rem'}}>
+                        {isOpen ? (
+                          <span className="badge badge-success">Activo</span>
+                        ) : (
+                          <span className="badge badge-secondary" style={{background: '#e2e8f0', color: '#475569'}}>Cerrado</span>
+                        )}
+                      </td>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{sh.startTime ? new Date(sh.startTime.toDate()).toLocaleString() : '-'}</td>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{sh.endTime ? new Date(sh.endTime.toDate()).toLocaleString() : 'En curso'}</td>
+                      <td style={{padding: '0.5rem'}}>Bs. {(sh.startCash || 0).toFixed(2)}</td>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>Bs. {cashSales.toFixed(2)} / Bs. {qrSales.toFixed(2)}</td>
+                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {(sh.expectedCash || (sh.startCash + cashSales)).toFixed(2)}</td>
+                      <td style={{padding: '0.5rem'}}>{sh.endCash !== undefined ? `Bs. ${sh.endCash.toFixed(2)}` : '-'}</td>
+                      <td style={{padding: '0.5rem', color: sh.difference < 0 ? 'var(--danger)' : (sh.difference > 0 ? 'var(--secondary-color)' : 'inherit'), fontWeight: 'bold'}}>
+                        {sh.difference !== undefined ? `Bs. ${sh.difference.toFixed(2)}` : '-'}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {shifts.length === 0 && (
+                  <tr>
+                    <td colSpan="9" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>
+                      No se han registrado turnos aún.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

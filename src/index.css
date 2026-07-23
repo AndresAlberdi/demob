@@ -231,7 +231,19 @@ body {
 .dashboard-header {
   margin-bottom: 2rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dashboard-header h2 {
+  color: #ffffff;
+  font-size: 1.85rem;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.dashboard-header p {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
 }
 
 .dashboard-grid {

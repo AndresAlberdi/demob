@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
-import { collection, query, getDocs, addDoc, serverTimestamp, where, updateDoc, doc } from 'firebase/firestore';
-import { Search, ShoppingCart, LogOut, Package, CreditCard, Banknote, Coffee, History, AlertTriangle, Send, Clock } from 'lucide-react';
+import { collection, query, getDocs, addDoc, serverTimestamp, where, updateDoc, doc, increment } from 'firebase/firestore';
+import { Search, ShoppingCart, LogOut, Package, CreditCard, Banknote, Coffee, History, AlertTriangle, Send, Clock, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const VendorDashboard = () => {
@@ -23,6 +23,8 @@ const VendorDashboard = () => {
   
   // Shift States
   const [activeShift, setActiveShift] = useState(null);
+  const [isReadOnly, setIsReadOnly] = useState(false);
+  const [activeShiftVendor, setActiveShiftVendor] = useState('');
   const [startCash, setStartCash] = useState('');
   const [endCash, setEndCash] = useState('');
   
@@ -53,29 +55,47 @@ const VendorDashboard = () => {
         if (doc.id === 'motivos') setMotivos(doc.data().list || []);
       });
 
-      // Check active shift
-      const sQuery = query(collection(db, "shifts"), where("vendorId", "==", currentUser.uid), where("status", "==", "open"));
+      // Check active shift globally across store
+      const sQuery = query(collection(db, "shifts"), where("status", "==", "open"));
       const sSnapshot = await getDocs(sQuery);
       if (!sSnapshot.empty) {
-        const shiftData = sSnapshot.docs[0].data();
-        const currentShiftId = sSnapshot.docs[0].id;
-        setActiveShift({ id: currentShiftId, ...shiftData });
+        const globalShiftDoc = sSnapshot.docs[0];
+        const globalShiftData = globalShiftDoc.data();
+        const globalShiftId = globalShiftDoc.id;
         
-        let cashBalance = shiftData.startCash;
+        const myName = currentUser.name || currentUser.email;
+        const isMyShift = globalShiftData.vendorId === currentUser.uid || globalShiftData.vendorName === myName;
         
-        const salesQuery = query(collection(db, "sales"), where("shiftId", "==", currentShiftId));
+        if (isMyShift) {
+          setActiveShift({ id: globalShiftId, ...globalShiftData });
+          setIsReadOnly(false);
+          setActiveShiftVendor('');
+        } else {
+          setActiveShift(null);
+          setIsReadOnly(true);
+          setActiveShiftVendor(globalShiftData.vendorName || 'otro vendedor');
+        }
+
+        let cashBalance = globalShiftData.startCash;
+        
+        const salesQuery = query(collection(db, "sales"), where("shiftId", "==", globalShiftId));
         const salesSnap = await getDocs(salesQuery);
         salesSnap.forEach(d => {
           if (d.data().method === 'Efectivo') cashBalance += d.data().total;
         });
         
-        const ordersQuery = query(collection(db, "orders"), where("shiftId", "==", currentShiftId));
+        const ordersQuery = query(collection(db, "orders"), where("shiftId", "==", globalShiftId));
         const ordersSnap = await getDocs(ordersQuery);
         ordersSnap.forEach(d => {
           cashBalance -= d.data().amount;
         });
         
         setCurrentCash(cashBalance);
+      } else {
+        setActiveShift(null);
+        setIsReadOnly(false);
+        setActiveShiftVendor('');
+        setCurrentCash(0);
       }
 
       // Load pending loans
@@ -100,12 +120,13 @@ const VendorDashboard = () => {
   // --- SHIFT LOGIC ---
   const openShift = async (e) => {
     e.preventDefault();
+    if (isReadOnly) return alert(`No puedes abrir un turno. Hay un turno activo asignado a ${activeShiftVendor}.`);
     if (!startCash || isNaN(startCash)) return alert('Ingrese un monto válido');
     setIsSubmitting(true);
     try {
       const shiftData = {
         vendorId: currentUser.uid,
-        vendorName: currentUser.email || currentUser.name || 'Vendedor',
+        vendorName: currentUser.name || currentUser.email,
         startTime: serverTimestamp(),
         startCash: parseFloat(startCash),
         status: 'open'
@@ -160,7 +181,18 @@ const VendorDashboard = () => {
 
   // --- POS LOGIC ---
   const addToCart = (product) => {
+    if (isReadOnly) return alert('Estás en modo Solo Lectura. No puedes realizar ventas.');
+    const availableStock = product.stock !== undefined ? product.stock : 0;
+    if (availableStock <= 0) {
+      return alert(`El producto "${product.name}" no tiene stock disponible.`);
+    }
+
     const existing = cart.find(item => item.id === product.id);
+    const currentQtyInCart = existing ? existing.qty : 0;
+    if (currentQtyInCart + 1 > availableStock) {
+      return alert(`No hay suficiente stock. Disponible: ${availableStock}`);
+    }
+
     if (existing) {
       setCart(cart.map(item => item.id === product.id ? {...item, qty: item.qty + 1} : item));
     } else {
@@ -185,13 +217,10 @@ const VendorDashboard = () => {
         timestamp: serverTimestamp()
       });
 
-      // Update inventory (Simplified: just deduct stock)
+      // Update inventory stock
       for (const item of cart) {
         const pRef = doc(db, "products", item.id);
-        const pDoc = products.find(p => p.id === item.id);
-        if(pDoc) {
-          await updateDoc(pRef, { stock: (pDoc.stock || 0) - item.qty });
-        }
+        await updateDoc(pRef, { stock: increment(-item.qty) });
       }
 
       alert(`Venta registrada con éxito (${method})`);
@@ -326,7 +355,35 @@ const VendorDashboard = () => {
         <div>
           <h2>Panel de Vendedor (POS)</h2>
           <p>Usuario: {currentUser?.email || currentUser?.name}</p>
-          {activeShift && <p style={{color: 'var(--primary-color)', fontWeight: '600'}}>Caja Actual: Bs. {currentCash.toFixed(2)}</p>}
+          <div style={{marginTop: '0.5rem', display: 'flex', gap: '0.75rem', alignItems: 'center'}}>
+            <span style={{
+              background: 'linear-gradient(135deg, #10b981, #059669)',
+              color: 'white',
+              padding: '0.35rem 0.85rem',
+              borderRadius: '20px',
+              fontWeight: '700',
+              fontSize: '0.95rem',
+              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+            }}>
+              💰 Caja Actual: Bs. {currentCash.toFixed(2)}
+            </span>
+            {isReadOnly && (
+              <span style={{
+                background: '#fef2f2',
+                color: '#dc2626',
+                border: '1px solid #fecaca',
+                padding: '0.35rem 0.85rem',
+                borderRadius: '20px',
+                fontWeight: '600',
+                fontSize: '0.85rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}>
+                <ShieldAlert size={16} /> MODO SOLO LECTURA (Turno activo: {activeShiftVendor})
+              </span>
+            )}
+          </div>
         </div>
         <div style={{display: 'flex', gap: '1rem'}}>
           {currentUser && (currentUser.email === 'admin@demob.com' || currentUser.email === 'pretsodatabase@gmail.com') && (
@@ -393,13 +450,35 @@ const VendorDashboard = () => {
                 </div>
                 
                 <div className="item-list" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '1rem', maxHeight: '500px', overflowY: 'auto', padding: '0.5rem'}}>
-                  {filteredProducts.map(p => (
-                    <div key={p.id} className="list-item" style={{flexDirection: 'column', alignItems: 'center', cursor: 'pointer', textAlign: 'center', padding: '1rem'}} onClick={() => addToCart(p)}>
-                      <span className="badge badge-success" style={{marginBottom: '0.5rem', fontSize: '0.7rem'}}>{p.category}</span>
-                      <h4 style={{marginBottom: '0.5rem', fontSize: '0.9rem'}}>{p.name}</h4>
-                      <span className="item-action" style={{fontSize: '1.1rem'}}>Bs. {p.price.toFixed(2)}</span>
-                    </div>
-                  ))}
+                  {filteredProducts.map(p => {
+                    const isOutOfStock = (p.stock !== undefined ? p.stock : 0) <= 0;
+                    return (
+                      <div 
+                        key={p.id} 
+                        className="list-item" 
+                        style={{
+                          flexDirection: 'column', 
+                          alignItems: 'center', 
+                          cursor: isOutOfStock || isReadOnly ? 'not-allowed' : 'pointer', 
+                          textAlign: 'center', 
+                          padding: '1rem',
+                          opacity: isOutOfStock ? 0.6 : 1
+                        }} 
+                        onClick={() => !isOutOfStock && !isReadOnly && addToCart(p)}
+                      >
+                        <div style={{display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', flexWrap: 'wrap', justifyContent: 'center'}}>
+                          <span className="badge badge-success" style={{fontSize: '0.7rem'}}>{p.category}</span>
+                          {isOutOfStock ? (
+                            <span className="badge" style={{fontSize: '0.7rem', background: '#fee2e2', color: '#dc2626'}}>Sin Stock</span>
+                          ) : (
+                            <span className="badge" style={{fontSize: '0.7rem', background: '#e0f2fe', color: '#0369a1'}}>Stock: {p.stock}</span>
+                          )}
+                        </div>
+                        <h4 style={{marginBottom: '0.5rem', fontSize: '0.9rem'}}>{p.name}</h4>
+                        <span className="item-action" style={{fontSize: '1.1rem'}}>Bs. {p.price.toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
               
