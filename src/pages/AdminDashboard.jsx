@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { collection, query, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy, serverTimestamp } from 'firebase/firestore';
-import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity, Download, Filter, FileText, Calendar, ListFilter } from 'lucide-react';
+import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity, Download, Filter, FileText, Calendar, ListFilter, PlusCircle, ArrowDownCircle, DollarSign } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { parseAndUploadCSV } from '../utils/csvParser';
 import { exportToCSV } from '../utils/csvExporter';
@@ -37,17 +37,26 @@ const AdminDashboard = () => {
   const [shifts, setShifts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loans, setLoans] = useState([]);
+  const [extraIncomes, setExtraIncomes] = useState([]);
   const [systemLogs, setSystemLogs] = useState([]);
   
   // Periodicity Report Filter States
   const [periodFilter, setPeriodFilter] = useState('hoy'); // hoy, semana, mes, personalizado
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
-  const [reportSubTab, setReportSubTab] = useState('all'); // all, losses, loans, orders
+  const [reportSubTab, setReportSubTab] = useState('all'); // all, losses, loans, orders, extra
 
   // CSV Form State
   const [csvHasHeader, setCsvHasHeader] = useState(true);
   
+  // Extra Income Form State
+  const [extraIncomeForm, setExtraIncomeForm] = useState({
+    type: 'devolucion',
+    description: '',
+    amount: '',
+    method: 'Efectivo'
+  });
+
   // Form & Edit states
   const [newUser, setNewUser] = useState({ name: '', pin: '' });
   const [newMotivo, setNewMotivo] = useState('');
@@ -87,14 +96,20 @@ const AdminDashboard = () => {
       const loadedProds = pSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
       setProducts(loadedProds);
       
-      // Extract categories dynamically from products and category settings
+      // Extract categories dynamically
       const catSnap = await getDoc(doc(db, "settings", "categories"));
       let dbCats = [];
       if (catSnap.exists()) {
         dbCats = catSnap.data().list || [];
       }
       const prodCats = Array.from(new Set(loadedProds.filter(p => !p.isDeleted).map(p => p.category).filter(Boolean)));
-      setCategories(Array.from(new Set([...dbCats, ...prodCats])));
+      const fullCats = Array.from(new Set([...dbCats, ...prodCats]));
+      setCategories(fullCats);
+
+      // Set default dropdown category if available
+      if (fullCats.length > 0 && !fullCats.includes(newProdForm.category)) {
+        setNewProdForm(prev => ({ ...prev, category: fullCats[0] }));
+      }
 
       // Load users
       const uSnap = await getDocs(query(collection(db, "app_users")));
@@ -116,7 +131,7 @@ const AdminDashboard = () => {
       const sSnap = await getDocs(query(collection(db, "sales")));
       setSales(sSnap.docs.map(d => ({id: d.id, ...d.data()})));
       
-      // Load shifts
+      // Load shifts (sorted newest first)
       const shSnap = await getDocs(query(collection(db, "shifts")));
       setShifts(shSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.startTime?.seconds || 0) - (a.startTime?.seconds || 0)));
       
@@ -127,6 +142,10 @@ const AdminDashboard = () => {
       // Load loans
       const loanSnap = await getDocs(query(collection(db, "loans")));
       setLoans(loanSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+
+      // Load extra incomes
+      const extraSnap = await getDocs(query(collection(db, "extra_incomes")));
+      setExtraIncomes(extraSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
 
       // Load system logs
       const logSnap = await getDocs(query(collection(db, "system_logs")));
@@ -160,6 +179,36 @@ const AdminDashboard = () => {
     } finally {
       setIsLoading(false);
       e.target.value = null;
+    }
+  };
+
+  // --- ADMIN EXTRA INCOME ---
+  const handleAddExtraIncome = async (e) => {
+    e.preventDefault();
+    if (!extraIncomeForm.description || !extraIncomeForm.amount || isNaN(extraIncomeForm.amount)) {
+      return alert("Ingrese una descripción y monto válidos.");
+    }
+    const amt = parseFloat(extraIncomeForm.amount);
+    try {
+      await addDoc(collection(db, "extra_incomes"), {
+        type: extraIncomeForm.type,
+        description: extraIncomeForm.description.trim(),
+        amount: amt,
+        method: extraIncomeForm.method,
+        registeredBy: currentUser?.email || 'Admin',
+        timestamp: serverTimestamp()
+      });
+      await logEvent(
+        'EXTRA_INCOME', 
+        currentUser?.email, 
+        `Registrado ingreso adicional (${extraIncomeForm.type}): ${extraIncomeForm.description} por Bs. ${amt.toFixed(2)} (${extraIncomeForm.method})`,
+        amt
+      );
+      alert("Ingreso adicional registrado exitosamente.");
+      setExtraIncomeForm({ type: 'devolucion', description: '', amount: '', method: 'Efectivo' });
+      loadData();
+    } catch (e) {
+      alert("Error registrando ingreso adicional");
     }
   };
 
@@ -225,14 +274,14 @@ const AdminDashboard = () => {
     try {
       await addDoc(collection(db, "products"), {
         name: newProdForm.name.trim(),
-        category: newProdForm.category.trim() || 'GENERAL',
+        category: newProdForm.category.trim() || (categories[0] || 'GENERAL'),
         price: parseFloat(newProdForm.price),
         stock: parseInt(newProdForm.stock) || 0,
         isDeleted: false
       });
       await logEvent('PRODUCT_CREATED', currentUser?.email, `Creado producto manual "${newProdForm.name}" (${newProdForm.category}) - Bs. ${newProdForm.price}, Stock: ${newProdForm.stock}`);
       alert("Producto creado exitosamente");
-      setNewProdForm({ name: '', category: 'CON GAS', price: '', stock: '10' });
+      setNewProdForm({ name: '', category: categories[0] || 'CON GAS', price: '', stock: '10' });
       loadData();
     } catch (e) {
       alert("Error creando producto");
@@ -307,7 +356,6 @@ const AdminDashboard = () => {
       if (!lossDoc) return;
 
       if (approved) {
-        // Find product and discount stock
         const prod = products.find(p => p.id === lossDoc.productId || p.name === lossDoc.productName);
         if (prod) {
           const newStock = Math.max(0, (prod.stock || 0) - (lossDoc.qty || 1));
@@ -454,7 +502,7 @@ const AdminDashboard = () => {
       endLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
     } else if (periodFilter === 'semana') {
       const day = now.getDay();
-      const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
       startLimit = new Date(now.setDate(diff));
       startLimit.setHours(0,0,0,0);
     } else if (periodFilter === 'mes') {
@@ -477,11 +525,12 @@ const AdminDashboard = () => {
     const periodOrders = orders.filter(o => checkTs(o.timestamp));
     const periodLoans = loans.filter(l => checkTs(l.timestamp) || checkTs(l.repaidAt));
     const periodLosses = allLosses.filter(l => checkTs(l.timestamp));
+    const periodExtraIncomes = extraIncomes.filter(i => checkTs(i.timestamp));
 
-    return { periodSales, periodOrders, periodLoans, periodLosses };
+    return { periodSales, periodOrders, periodLoans, periodLosses, periodExtraIncomes };
   };
 
-  const { periodSales, periodOrders, periodLoans, periodLosses } = getFilteredByPeriod();
+  const { periodSales, periodOrders, periodLoans, periodLosses, periodExtraIncomes } = getFilteredByPeriod();
 
   // Metrics based on period
   const pCashSales = periodSales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
@@ -489,9 +538,12 @@ const AdminDashboard = () => {
   const pPurchases = periodOrders.reduce((acc, o) => acc + o.amount, 0);
   const pLoanRepayments = periodLoans.filter(l => l.status === 'repaid').reduce((acc, l) => acc + l.amount, 0);
   
-  const pTotalIncome = pCashSales + pQRSales + pLoanRepayments;
+  const pExtraCash = periodExtraIncomes.filter(i => i.method === 'Efectivo').reduce((acc, i) => acc + i.amount, 0);
+  const pExtraQR = periodExtraIncomes.filter(i => i.method === 'QR').reduce((acc, i) => acc + i.amount, 0);
+  
+  const pTotalIncome = pCashSales + pQRSales + pLoanRepayments + pExtraCash + pExtraQR;
   const pTotalExpenses = pPurchases;
-  const pCashBalance = pCashSales + pLoanRepayments - pPurchases;
+  const pCashBalance = pCashSales + pLoanRepayments + pExtraCash - pPurchases;
 
   // Active shift calculations
   const activeShiftDoc = shifts.find(s => s.status === 'open');
@@ -558,6 +610,7 @@ const AdminDashboard = () => {
       {/* --- REPORTS TAB WITH PERIODICITY & SUB-REPORTS --- */}
       {!isLoading && activeTab === 'reports' && (
         <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+          
           {/* Period Filter Selector */}
           <div className="card glass-panel flex-between" style={{flexWrap: 'wrap', gap: '1rem'}}>
             <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
@@ -598,6 +651,10 @@ const AdminDashboard = () => {
               <h3 className="card-title">🔄 Cobro Préstamos</h3>
               <div className="card-value">Bs. {pLoanRepayments.toFixed(2)}</div>
             </div>
+            <div className="card glass-panel" style={{borderLeft: '4px solid #14b8a6'}}>
+              <h3 className="card-title">➕ Ingresos Adicionales</h3>
+              <div className="card-value">Bs. {(pExtraCash + pExtraQR).toFixed(2)}</div>
+            </div>
             <div className="card glass-panel" style={{borderLeft: '4px solid #f59e0b'}}>
               <h3 className="card-title">💰 Saldo Acumulado Caja</h3>
               <div className="card-value">Bs. {pCashBalance.toFixed(2)}</div>
@@ -608,11 +665,78 @@ const AdminDashboard = () => {
             </div>
           </div>
 
+          {/* ADMIN EXTRA INCOME REGISTRATION FORM */}
+          <div className="card glass-panel" style={{maxWidth: '650px'}}>
+            <h3><PlusCircle size={20} style={{display: 'inline', marginRight: '0.5rem', color: 'var(--secondary-color)'}}/> Registrar Ingreso Adicional / Extraordinario (Admin)</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
+              Permite registrar devoluciones de proveedores, aportes de capital o ingresos extraordinarios.
+            </p>
+            <form onSubmit={handleAddExtraIncome} style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem'}}>
+              <div className="form-group">
+                <label>Tipo de Ingreso</label>
+                <select 
+                  className="input-field" 
+                  value={extraIncomeForm.type} 
+                  onChange={e => setExtraIncomeForm({...extraIncomeForm, type: e.target.value})}
+                  required
+                >
+                  <option value="devolucion">Devolución / Reembolso</option>
+                  <option value="extraordinario">Ingreso Extraordinario</option>
+                  <option value="aporte">Aporte a Caja</option>
+                  <option value="otro">Otro Ingreso</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Método de Pago</label>
+                <select 
+                  className="input-field" 
+                  value={extraIncomeForm.method} 
+                  onChange={e => setExtraIncomeForm({...extraIncomeForm, method: e.target.value})}
+                  required
+                >
+                  <option value="Efectivo">Efectivo</option>
+                  <option value="QR">QR / Transferencia Bancaria</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{gridColumn: 'span 2'}}>
+                <label>Descripción del Ingreso</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ej: Reembolso Coca-Cola por cajas devueltas, Venta de envases..."
+                  value={extraIncomeForm.description}
+                  onChange={e => setExtraIncomeForm({...extraIncomeForm, description: e.target.value})}
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{gridColumn: 'span 2'}}>
+                <label>Monto (Bs.)</label>
+                <input 
+                  type="number" 
+                  step="0.10"
+                  className="input-field" 
+                  placeholder="0.00"
+                  value={extraIncomeForm.amount}
+                  onChange={e => setExtraIncomeForm({...extraIncomeForm, amount: e.target.value})}
+                  required
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary" style={{gridColumn: 'span 2'}}>
+                Registrar Ingreso Adicional
+              </button>
+            </form>
+          </div>
+
           {/* Sub-Reports Selector */}
           <div className="card glass-panel">
             <div className="flex-between" style={{marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem'}}>
-              <div className="tabs" style={{margin: 0}}>
+              <div className="tabs" style={{margin: 0, flexWrap: 'wrap'}}>
                 <div className={`tab ${reportSubTab === 'all' ? 'active' : ''}`} onClick={() => setReportSubTab('all')}>Todas las Transacciones</div>
+                <div className={`tab ${reportSubTab === 'extra' ? 'active' : ''}`} onClick={() => setReportSubTab('extra')}>Ingresos Adicionales ({periodExtraIncomes.length})</div>
                 <div className={`tab ${reportSubTab === 'losses' ? 'active' : ''}`} onClick={() => setReportSubTab('losses')}>Reporte de Pérdidas</div>
                 <div className={`tab ${reportSubTab === 'loans' ? 'active' : ''}`} onClick={() => setReportSubTab('loans')}>Reporte de Préstamos</div>
                 <div className={`tab ${reportSubTab === 'orders' ? 'active' : ''}`} onClick={() => setReportSubTab('orders')}>Compras y Pedidos</div>
@@ -623,6 +747,10 @@ const AdminDashboard = () => {
                   if (reportSubTab === 'all') {
                     exportToCSV('transacciones.csv', periodSales.map(s => ({
                       FECHA: formatDate(s.timestamp), METODO: s.method, TOTAL: s.total, VENDEDOR: s.vendorName || '-'
+                    })));
+                  } else if (reportSubTab === 'extra') {
+                    exportToCSV('ingresos_adicionales.csv', periodExtraIncomes.map(i => ({
+                      FECHA: formatDate(i.timestamp), TIPO: i.type, DESCRIPCION: i.description, METODO: i.method, MONTO: i.amount, REGISTRADO_POR: i.registeredBy
                     })));
                   } else if (reportSubTab === 'losses') {
                     exportToCSV('reporte_perdidas.csv', periodLosses.map(l => ({
@@ -671,6 +799,41 @@ const AdminDashboard = () => {
                     ))}
                   {periodSales.length === 0 && (
                     <tr><td colSpan="5" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>No se registraron ventas en el periodo seleccionado.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {/* Sub-Report: Extra Incomes */}
+            {reportSubTab === 'extra' && (
+              <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                    <th style={{padding: '0.5rem'}}>Fecha</th>
+                    <th style={{padding: '0.5rem'}}>Tipo</th>
+                    <th style={{padding: '0.5rem'}}>Descripción</th>
+                    <th style={{padding: '0.5rem'}}>Método</th>
+                    <th style={{padding: '0.5rem'}}>Registrado Por</th>
+                    <th style={{padding: '0.5rem', textAlign: 'right'}}>Monto (Bs.)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {periodExtraIncomes.map(i => (
+                    <tr key={i.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{formatDate(i.timestamp)}</td>
+                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>{i.type?.toUpperCase()}</td>
+                      <td style={{padding: '0.5rem'}}>{i.description}</td>
+                      <td style={{padding: '0.5rem'}}>
+                        <span className={`badge ${i.method === 'Efectivo' ? 'badge-success' : 'badge-primary'}`}>{i.method}</span>
+                      </td>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{i.registeredBy}</td>
+                      <td style={{padding: '0.5rem', textAlign: 'right', fontWeight: 'bold', color: 'var(--secondary-color)'}}>
+                        +Bs. {(i.amount || 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                  {periodExtraIncomes.length === 0 && (
+                    <tr><td colSpan="6" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>No hay ingresos adicionales registrados en este periodo.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -785,7 +948,7 @@ const AdminDashboard = () => {
           {/* REORDERED TOP CARDS SECTION */}
           <div className="dashboard-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))'}}>
             
-            {/* Card 1: Create Product */}
+            {/* Card 1: Create Product with Category Drop-Down */}
             <div className="card glass-panel">
               <h3>Nuevo Producto (Manual)</h3>
               <form onSubmit={handleCreateProduct}>
@@ -795,7 +958,16 @@ const AdminDashboard = () => {
                 </div>
                 <div className="form-group">
                   <label>Categoría</label>
-                  <input type="text" className="input-field" value={newProdForm.category} onChange={e=>setNewProdForm({...newProdForm, category: e.target.value})} placeholder="Ej: CON GAS, DULCES..." required/>
+                  <select 
+                    className="input-field" 
+                    value={newProdForm.category} 
+                    onChange={e=>setNewProdForm({...newProdForm, category: e.target.value})} 
+                    required
+                  >
+                    {categories.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
                 </div>
                 <div style={{display: 'flex', gap: '0.5rem'}}>
                   <div className="form-group" style={{flex: 1}}>
@@ -980,12 +1152,13 @@ const AdminDashboard = () => {
                         </td>
                         <td style={{padding: '0.5rem'}}>
                           {isEditing ? (
-                            <input 
-                              type="text" 
+                            <select 
                               className="input-field" 
                               value={editProdForm.category} 
-                              onChange={e => setEditProdForm({...editProdForm, category: e.target.value})} 
-                            />
+                              onChange={e => setEditProdForm({...editProdForm, category: e.target.value})}
+                            >
+                              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
                           ) : (
                             <span className="badge badge-success">{p.category}</span>
                           )}
@@ -1086,7 +1259,7 @@ const AdminDashboard = () => {
           </div>
 
           <div className="card glass-panel">
-            <h3><Clock size={20} /> Historial y Seguimiento de Turnos</h3>
+            <h3><Clock size={20} /> Historial y Seguimiento de Turnos (Ordenado por Turnos Recientes)</h3>
             <table style={{width: '100%', borderCollapse: 'collapse', marginTop: '1rem'}}>
               <thead>
                 <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
@@ -1103,45 +1276,51 @@ const AdminDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {shifts.map(sh => {
-                  const isOpen = sh.status === 'open';
-                  const shiftSales = sales.filter(s => s.shiftId === sh.id);
-                  const cashSales = shiftSales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
-                  const qrSales = shiftSales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
-                  const shiftExpenses = orders.filter(o => o.shiftId === sh.id).reduce((acc, o) => acc + o.amount, 0);
-                  const expectedCash = (sh.startCash || 0) + cashSales - shiftExpenses;
-                  
-                  return (
-                    <tr key={sh.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
-                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>{sh.vendorName || 'Vendedor'}</td>
-                      <td style={{padding: '0.5rem'}}>
-                        {isOpen ? (
-                          <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
-                            <span className="badge badge-success">Activo</span>
-                            <button className="btn btn-danger" style={{padding: '0.15rem 0.4rem', fontSize: '0.75rem'}} onClick={() => forceCloseShift(sh.id, sh.vendorName)}>Cerrar</button>
-                          </div>
-                        ) : (
-                          <span className="badge badge-secondary" style={{background: '#e2e8f0', color: '#475569'}}>Cerrado</span>
-                        )}
-                      </td>
-                      <td style={{padding: '0.5rem', fontSize: '0.8rem'}}>
-                        <div>Apertura: {formatDate(sh.startTime)}</div>
-                        <div>Cierre: {sh.endTime ? formatDate(sh.endTime) : 'En curso'}</div>
-                      </td>
-                      <td style={{padding: '0.5rem'}}>Bs. {(sh.startCash || 0).toFixed(2)}</td>
-                      <td style={{padding: '0.5rem', color: 'var(--secondary-color)', fontWeight: '500'}}>+Bs. {cashSales.toFixed(2)}</td>
-                      <td style={{padding: '0.5rem', color: 'var(--danger)'}}>-Bs. {shiftExpenses.toFixed(2)}</td>
-                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {(sh.expectedCash !== undefined ? sh.expectedCash : expectedCash).toFixed(2)}</td>
-                      <td style={{padding: '0.5rem'}}>{sh.endCash !== undefined ? `Bs. ${sh.endCash.toFixed(2)}` : '-'}</td>
-                      <td style={{padding: '0.5rem', color: sh.difference < 0 ? 'var(--danger)' : (sh.difference > 0 ? 'var(--secondary-color)' : 'inherit'), fontWeight: 'bold'}}>
-                        {sh.difference !== undefined ? `Bs. ${sh.difference.toFixed(2)}` : '-'}
-                      </td>
-                      <td style={{padding: '0.5rem', background: 'rgba(59, 130, 246, 0.05)', fontWeight: 'bold', color: '#1e40af'}}>
-                        Bs. {qrSales.toFixed(2)}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {[...shifts]
+                  .sort((a,b) => {
+                    const tA = a.startTime?.seconds || (a.startTime ? new Date(a.startTime).getTime()/1000 : 0);
+                    const tB = b.startTime?.seconds || (b.startTime ? new Date(b.startTime).getTime()/1000 : 0);
+                    return tB - tA;
+                  })
+                  .map(sh => {
+                    const isOpen = sh.status === 'open';
+                    const shiftSales = sales.filter(s => s.shiftId === sh.id);
+                    const cashSales = shiftSales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
+                    const qrSales = shiftSales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
+                    const shiftExpenses = orders.filter(o => o.shiftId === sh.id).reduce((acc, o) => acc + o.amount, 0);
+                    const expectedCash = (sh.startCash || 0) + cashSales - shiftExpenses;
+                    
+                    return (
+                      <tr key={sh.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                        <td style={{padding: '0.5rem', fontWeight: 'bold'}}>{sh.vendorName || 'Vendedor'}</td>
+                        <td style={{padding: '0.5rem'}}>
+                          {isOpen ? (
+                            <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+                              <span className="badge badge-success">Activo</span>
+                              <button className="btn btn-danger" style={{padding: '0.15rem 0.4rem', fontSize: '0.75rem'}} onClick={() => forceCloseShift(sh.id, sh.vendorName)}>Cerrar</button>
+                            </div>
+                          ) : (
+                            <span className="badge badge-secondary" style={{background: '#e2e8f0', color: '#475569'}}>Cerrado</span>
+                          )}
+                        </td>
+                        <td style={{padding: '0.5rem', fontSize: '0.8rem'}}>
+                          <div>Apertura: {formatDate(sh.startTime)}</div>
+                          <div>Cierre: {sh.endTime ? formatDate(sh.endTime) : 'En curso'}</div>
+                        </td>
+                        <td style={{padding: '0.5rem'}}>Bs. {(sh.startCash || 0).toFixed(2)}</td>
+                        <td style={{padding: '0.5rem', color: 'var(--secondary-color)', fontWeight: '500'}}>+Bs. {cashSales.toFixed(2)}</td>
+                        <td style={{padding: '0.5rem', color: 'var(--danger)'}}>-Bs. {shiftExpenses.toFixed(2)}</td>
+                        <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {(sh.expectedCash !== undefined ? sh.expectedCash : expectedCash).toFixed(2)}</td>
+                        <td style={{padding: '0.5rem'}}>{sh.endCash !== undefined ? `Bs. ${sh.endCash.toFixed(2)}` : '-'}</td>
+                        <td style={{padding: '0.5rem', color: sh.difference < 0 ? 'var(--danger)' : (sh.difference > 0 ? 'var(--secondary-color)' : 'inherit'), fontWeight: 'bold'}}>
+                          {sh.difference !== undefined ? `Bs. ${sh.difference.toFixed(2)}` : '-'}
+                        </td>
+                        <td style={{padding: '0.5rem', background: 'rgba(59, 130, 246, 0.05)', fontWeight: 'bold', color: '#1e40af'}}>
+                          Bs. {qrSales.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 {shifts.length === 0 && (
                   <tr>
                     <td colSpan="10" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>
