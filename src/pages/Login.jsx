@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Store, Loader2 } from 'lucide-react';
+import { Store, Loader2, KeyRound, UserCircle } from 'lucide-react';
 
 const Login = () => {
+  const [loginMethod, setLoginMethod] = useState('pin'); // 'pin' or 'email'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { login } = useAuth();
+  
+  const { login, loginWithPin } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
+  const handleEmailSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setIsSubmitting(true);
@@ -27,58 +30,111 @@ const Login = () => {
     }
   };
 
+  const handlePinSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsSubmitting(true);
+    
+    try {
+      await loginWithPin(pin);
+      navigate('/');
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Error al iniciar sesión con PIN.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
-    <div className="auth-container">
-      <div className="auth-card glass-panel">
-        <div className="auth-header">
+    <div className="login-container">
+      <div className="login-card glass-panel">
+        <div className="login-header">
           <div className="logo-container">
-            <Store size={48} className="logo-icon" />
+            <Store className="logo-icon" size={48} />
           </div>
-          <h1>DemoB</h1>
+          <h1>Demo B POS</h1>
           <p>Sistema de Ventas e Inventarios</p>
         </div>
         
-        {error && <div className="alert alert-error">{error}</div>}
+        <div className="tabs" style={{marginBottom: '1.5rem'}}>
+          <div className={`tab ${loginMethod === 'pin' ? 'active' : ''}`} onClick={() => setLoginMethod('pin')}>
+            <KeyRound size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Vendedor (PIN)
+          </div>
+          <div className={`tab ${loginMethod === 'email' ? 'active' : ''}`} onClick={() => setLoginMethod('email')}>
+            <UserCircle size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Administrador
+          </div>
+        </div>
+
+        {error && <div className="error-message">{error}</div>}
         
-        <form onSubmit={handleSubmit} className="auth-form">
-          <div className="form-group">
-            <label htmlFor="email">Correo Electrónico</label>
-            <input 
-              type="email" 
-              id="email"
-              value={email} 
-              onChange={(e) => setEmail(e.target.value)} 
-              placeholder="usuario@tienda.com"
-              required 
-              className="input-field"
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="password">Contraseña</label>
-            <input 
-              type="password" 
-              id="password"
-              value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
-              placeholder="••••••••"
-              required 
-              className="input-field"
-            />
-          </div>
-          
-          <button 
-            type="submit" 
-            className="btn btn-primary btn-block" 
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? (
-              <span className="flex-center"><Loader2 className="spinner" size={20} /> Ingresando...</span>
-            ) : (
-              'Ingresar'
-            )}
-          </button>
-        </form>
+        {loginMethod === 'email' ? (
+          <form onSubmit={handleEmailSubmit}>
+            <div className="form-group">
+              <label>Correo Electrónico</label>
+              <input 
+                type="email" 
+                className="input-field" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@demob.com"
+                required
+              />
+            </div>
+            
+            <div className="form-group">
+              <label>Contraseña</label>
+              <input 
+                type="password" 
+                className="input-field" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            
+            <button 
+              type="submit" 
+              className="btn btn-primary btn-block"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>
+              ) : (
+                'Ingresar como Admin'
+              )}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handlePinSubmit}>
+            <div className="form-group">
+              <label>PIN de Acceso</label>
+              <input 
+                type="password" 
+                className="input-field" 
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                placeholder="••••"
+                maxLength="4"
+                required
+                style={{textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.5rem'}}
+              />
+            </div>
+            
+            <button 
+              type="submit" 
+              className="btn btn-primary btn-block"
+              disabled={isSubmitting || pin.length < 4}
+            >
+              {isSubmitting ? (
+                <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>
+              ) : (
+                'Ingresar al POS'
+              )}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

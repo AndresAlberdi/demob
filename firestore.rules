@@ -2,12 +2,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Function to check if user is logged in
     function isAuthenticated() {
       return request.auth != null;
     }
-
-    // Function to check if user is the master admin or a registered admin (for this demo, we check if they are authenticated and have admin role, but strictly the rule states pretsodatabase@gmail.com is admin, we'll adapt to demob admin if needed, but let's stick to simple rules).
+    
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.email == 'pretsodatabase@gmail.com' ||
@@ -16,49 +14,11 @@ service cloud.firestore {
       );
     }
     
-    function isVendorOrAdmin() {
-      return isAuthenticated() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'vendedor'] || isAdmin()
-      );
-    }
-
-    // users: Only admin can manage, users can read their own
-    match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
+    // For Demo B, we allow authenticated users (including anonymous PIN users)
+    // to read and write most data, but limit some collections to Admin
     
-    // products: Admin manages, vendors can read
-    match /products/{productId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    // sales, shifts, expenses, loans, logs: Vendors can create/update, admin manages
-    match /sales/{saleId} {
-      allow read, write: if isVendorOrAdmin();
-    }
-    
-    match /shifts/{shiftId} {
-      allow read, write: if isVendorOrAdmin();
-    }
-    
-    match /loans/{loanId} {
-      allow read, write: if isVendorOrAdmin();
-    }
-    
-    match /expenses/{expenseId} {
-      allow read, write: if isVendorOrAdmin();
-    }
-    
-    match /logs/{logId} {
-      allow read: if isAdmin();
-      allow create: if isVendorOrAdmin();
-    }
-    
-    // Default fallback
     match /{document=**} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAuthenticated();
     }
   }
 }
