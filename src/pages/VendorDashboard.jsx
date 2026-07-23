@@ -186,7 +186,7 @@ const VendorDashboard = () => {
     if (!endCash || isNaN(endCash)) return alert('Ingrese el dinero físico actual');
     setIsSubmitting(true);
     try {
-      // Calc sales during shift
+      // Calc sales & expenses during shift
       const salesQuery = query(collection(db, "sales"), where("shiftId", "==", activeShift.id));
       const salesSnap = await getDocs(salesQuery);
       let totalCashSales = 0;
@@ -196,7 +196,14 @@ const VendorDashboard = () => {
         if (d.data().method === 'QR') totalQRSales += d.data().total;
       });
 
-      const expectedCash = activeShift.startCash + totalCashSales;
+      const ordersQuery = query(collection(db, "orders"), where("shiftId", "==", activeShift.id));
+      const ordersSnap = await getDocs(ordersQuery);
+      let totalExpenses = 0;
+      ordersSnap.forEach(d => {
+        totalExpenses += d.data().amount;
+      });
+
+      const expectedCash = activeShift.startCash + totalCashSales - totalExpenses;
       const physicalCash = parseFloat(endCash);
       const difference = physicalCash - expectedCash;
 
@@ -206,11 +213,12 @@ const VendorDashboard = () => {
         expectedCash,
         totalCashSales,
         totalQRSales,
+        totalExpenses,
         difference,
         status: 'closed'
       });
 
-      alert(`Turno cerrado.\nEsperado en caja: Bs. ${expectedCash.toFixed(2)}\nFísico: Bs. ${physicalCash.toFixed(2)}\nDiferencia: Bs. ${difference.toFixed(2)}`);
+      alert(`Turno cerrado con éxito.\n\n--- CAJA LOCAL (EFECTIVO) ---\nEsperado en caja: Bs. ${expectedCash.toFixed(2)}\nFísico contado: Bs. ${physicalCash.toFixed(2)}\nDiferencia: Bs. ${difference.toFixed(2)}\n\n--- BANCO (QR) ---\nVentas por QR: Bs. ${totalQRSales.toFixed(2)}`);
       setActiveShift(null);
       setEndCash('');
     } catch (e) {
@@ -419,7 +427,7 @@ const VendorDashboard = () => {
         <div>
           <h2>Panel de Vendedor (POS)</h2>
           <p>Usuario: {currentUser?.email || currentUser?.name}</p>
-          <div style={{marginTop: '0.5rem', display: 'flex', gap: '0.75rem', alignItems: 'center'}}>
+          <div style={{marginTop: '0.5rem', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap'}}>
             <span style={{
               background: 'linear-gradient(135deg, #10b981, #059669)',
               color: 'white',
@@ -429,7 +437,18 @@ const VendorDashboard = () => {
               fontSize: '0.95rem',
               boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
             }}>
-              💰 Caja Actual: Bs. {currentCash.toFixed(2)}
+              💵 Caja Efectivo: Bs. {currentCash.toFixed(2)}
+            </span>
+            <span style={{
+              background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+              color: 'white',
+              padding: '0.35rem 0.85rem',
+              borderRadius: '20px',
+              fontWeight: '700',
+              fontSize: '0.95rem',
+              boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+            }}>
+              📱 QR (Banco): Bs. {shiftOperations.filter(o=>o.opType==='Venta' && o.method==='QR').reduce((acc, o)=>acc+o.amount, 0).toFixed(2)}
             </span>
             {isReadOnly && (
               <span style={{
@@ -838,18 +857,71 @@ const VendorDashboard = () => {
           )}
 
           {activeTab === 'shift' && (
-            <div className="card glass-panel" style={{maxWidth: '500px', margin: '0 auto', textAlign: 'center'}}>
-              <h3><Clock size={20} /> Arqueo y Cierre de Caja</h3>
-              <p style={{marginBottom: '1rem'}}>Para cerrar su turno, cuente el dinero físico que tiene en caja actualmente.</p>
+            <div className="card glass-panel" style={{maxWidth: '550px', margin: '0 auto'}}>
+              <h3 style={{textAlign: 'center'}}><Clock size={20} /> Arqueo y Cierre de Caja Local</h3>
+              
+              <div style={{
+                background: 'rgba(255,255,255,0.7)',
+                padding: '1rem',
+                borderRadius: '12px',
+                margin: '1rem 0',
+                border: '1px solid var(--border-color)'
+              }}>
+                <h4 style={{color: 'var(--primary-color)', marginBottom: '0.5rem'}}>💵 Arqueo de Caja Física (Efectivo)</h4>
+                <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem'}}>
+                  <span>Caja Inicial:</span>
+                  <span>Bs. {(activeShift?.startCash || 0).toFixed(2)}</span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem'}}>
+                  <span>Ventas en Efectivo (+):</span>
+                  <span>Bs. {shiftOperations.filter(o=>o.opType==='Venta' && o.method==='Efectivo').reduce((acc, o)=>acc+o.amount, 0).toFixed(2)}</span>
+                </div>
+                <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', marginBottom: '0.25rem'}}>
+                  <span>Egresos / Compras (-):</span>
+                  <span>Bs. {Math.abs(shiftOperations.filter(o=>o.amount < 0).reduce((acc, o)=>acc+o.amount, 0)).toFixed(2)}</span>
+                </div>
+                <div style={{
+                  display: 'flex', 
+                  justify: 'space-between', 
+                  fontSize: '1.05rem', 
+                  fontWeight: 'bold', 
+                  borderTop: '1px solid rgba(0,0,0,0.1)', 
+                  paddingTop: '0.5rem',
+                  marginTop: '0.5rem',
+                  color: 'var(--secondary-color)'
+                }}>
+                  <span>Efectivo Esperado en Caja:</span>
+                  <span>Bs. {currentCash.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div style={{
+                background: 'rgba(239, 246, 255, 0.8)',
+                padding: '1rem',
+                borderRadius: '12px',
+                marginBottom: '1.5rem',
+                border: '1px solid #bfdbfe'
+              }}>
+                <h4 style={{color: '#1d4ed8', marginBottom: '0.25rem'}}>📱 Transferencias QR (Banco)</h4>
+                <p style={{fontSize: '0.8rem', color: '#3b82f6', marginBottom: '0.5rem'}}>
+                  Este dinero no forma parte del efectivo en caja local; debe cuadrar con extractos bancarios.
+                </p>
+                <div style={{display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#1e40af'}}>
+                  <span>Total Ventas QR:</span>
+                  <span>Bs. {shiftOperations.filter(o=>o.opType==='Venta' && o.method==='QR').reduce((acc, o)=>acc+o.amount, 0).toFixed(2)}</span>
+                </div>
+              </div>
+
               <form onSubmit={closeShift}>
                 <div className="form-group" style={{textAlign: 'left'}}>
-                  <label>Dinero Físico en Caja (Bs.)</label>
+                  <label>Efectivo Físico Contado en Caja (Bs.)</label>
                   <input 
                     type="number" 
                     step="0.10"
                     className="input-field" 
                     value={endCash}
                     onChange={e => setEndCash(e.target.value)}
+                    placeholder="Ingrese el monto en billetes y monedas"
                     required
                   />
                 </div>

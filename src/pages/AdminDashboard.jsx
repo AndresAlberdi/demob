@@ -621,13 +621,14 @@ const AdminDashboard = () => {
                 <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
                   <th style={{padding: '0.5rem'}}>Vendedor</th>
                   <th style={{padding: '0.5rem'}}>Estado</th>
-                  <th style={{padding: '0.5rem'}}>Apertura</th>
-                  <th style={{padding: '0.5rem'}}>Cierre</th>
-                  <th style={{padding: '0.5rem'}}>Caja Inicial</th>
-                  <th style={{padding: '0.5rem'}}>Ventas (Ef/QR)</th>
-                  <th style={{padding: '0.5rem'}}>Esperado</th>
-                  <th style={{padding: '0.5rem'}}>Dejado/Rendido</th>
-                  <th style={{padding: '0.5rem'}}>Descuadre</th>
+                  <th style={{padding: '0.5rem'}}>Apertura / Cierre</th>
+                  <th style={{padding: '0.5rem'}}>💵 Ef. Inicial</th>
+                  <th style={{padding: '0.5rem'}}>💵 Ventas Ef.</th>
+                  <th style={{padding: '0.5rem'}}>💵 Egresos</th>
+                  <th style={{padding: '0.5rem'}}>💵 Ef. Esperado</th>
+                  <th style={{padding: '0.5rem'}}>💵 Ef. Contado</th>
+                  <th style={{padding: '0.5rem'}}>💵 Descuadre</th>
+                  <th style={{padding: '0.5rem', background: 'rgba(59, 130, 246, 0.1)', color: '#1d4ed8'}}>📱 QR (Banco)</th>
                 </tr>
               </thead>
               <tbody>
@@ -636,6 +637,8 @@ const AdminDashboard = () => {
                   const shiftSales = sales.filter(s => s.shiftId === sh.id);
                   const cashSales = shiftSales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
                   const qrSales = shiftSales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
+                  const shiftExpenses = orders.filter(o => o.shiftId === sh.id).reduce((acc, o) => acc + o.amount, 0);
+                  const expectedCash = (sh.startCash || 0) + cashSales - shiftExpenses;
                   
                   return (
                     <tr key={sh.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
@@ -650,14 +653,20 @@ const AdminDashboard = () => {
                           <span className="badge badge-secondary" style={{background: '#e2e8f0', color: '#475569'}}>Cerrado</span>
                         )}
                       </td>
-                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{sh.startTime ? new Date(sh.startTime.toDate()).toLocaleString() : '-'}</td>
-                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{sh.endTime ? new Date(sh.endTime.toDate()).toLocaleString() : 'En curso'}</td>
+                      <td style={{padding: '0.5rem', fontSize: '0.8rem'}}>
+                        <div>Apertura: {sh.startTime ? new Date(sh.startTime.toDate()).toLocaleString() : '-'}</div>
+                        <div>Cierre: {sh.endTime ? new Date(sh.endTime.toDate()).toLocaleString() : 'En curso'}</div>
+                      </td>
                       <td style={{padding: '0.5rem'}}>Bs. {(sh.startCash || 0).toFixed(2)}</td>
-                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>Bs. {cashSales.toFixed(2)} / Bs. {qrSales.toFixed(2)}</td>
-                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {(sh.expectedCash || (sh.startCash + cashSales)).toFixed(2)}</td>
+                      <td style={{padding: '0.5rem', color: 'var(--secondary-color)', fontWeight: '500'}}>+Bs. {cashSales.toFixed(2)}</td>
+                      <td style={{padding: '0.5rem', color: 'var(--danger)'}}>-Bs. {shiftExpenses.toFixed(2)}</td>
+                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {(sh.expectedCash !== undefined ? sh.expectedCash : expectedCash).toFixed(2)}</td>
                       <td style={{padding: '0.5rem'}}>{sh.endCash !== undefined ? `Bs. ${sh.endCash.toFixed(2)}` : '-'}</td>
                       <td style={{padding: '0.5rem', color: sh.difference < 0 ? 'var(--danger)' : (sh.difference > 0 ? 'var(--secondary-color)' : 'inherit'), fontWeight: 'bold'}}>
                         {sh.difference !== undefined ? `Bs. ${sh.difference.toFixed(2)}` : '-'}
+                      </td>
+                      <td style={{padding: '0.5rem', background: 'rgba(59, 130, 246, 0.05)', fontWeight: 'bold', color: '#1e40af'}}>
+                        Bs. {qrSales.toFixed(2)}
                       </td>
                     </tr>
                   );
