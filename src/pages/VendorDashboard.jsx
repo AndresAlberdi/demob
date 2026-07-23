@@ -38,6 +38,10 @@ const VendorDashboard = () => {
   const [lossForm, setLossForm] = useState({ reason: '', productId: '', qty: 1 });
   const [orderForm, setOrderForm] = useState({ type: 'pedido', description: '', amount: '', receiptType: 'ninguno', receiptNumber: '' });
   const [currentCash, setCurrentCash] = useState(0);
+  
+  // Vendor Self PIN Change State
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [newVendorPin, setNewVendorPin] = useState('');
 
   useEffect(() => {
     if (currentUser) {
@@ -105,6 +109,7 @@ const VendorDashboard = () => {
           detail: d.data().items?.map(i => `${i.qty}x ${i.name}`).join(', ') || 'Venta',
           amount: d.data().total,
           method: d.data().method,
+          rawTime: d.data().timestamp,
           time: d.data().timestamp ? new Date(d.data().timestamp.toDate()).toLocaleTimeString() : 'Reciente'
         }));
 
@@ -116,6 +121,7 @@ const VendorDashboard = () => {
           detail: `${d.data().description} ${d.data().receiptNumber ? `[${d.data().receiptType}: ${d.data().receiptNumber}]` : ''}`,
           amount: -d.data().amount,
           method: 'Efectivo',
+          rawTime: d.data().timestamp,
           time: d.data().timestamp ? new Date(d.data().timestamp.toDate()).toLocaleTimeString() : 'Reciente'
         }));
 
@@ -127,10 +133,12 @@ const VendorDashboard = () => {
           detail: `${d.data().qty}x ${d.data().productName} (${d.data().reason})`,
           amount: 0,
           method: '-',
+          rawTime: d.data().timestamp,
           time: d.data().timestamp ? new Date(d.data().timestamp.toDate()).toLocaleTimeString() : 'Reciente'
         }));
 
-        setShiftOperations([...sList, ...oList, ...lList]);
+        const sortedOps = [...sList, ...oList, ...lList].sort((a,b) => (b.rawTime?.seconds || 0) - (a.rawTime?.seconds || 0));
+        setShiftOperations(sortedOps);
       } else {
         setActiveShift(null);
         setIsReadOnly(false);
@@ -223,6 +231,23 @@ const VendorDashboard = () => {
       setEndCash('');
     } catch (e) {
       alert('Error cerrando turno');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleChangePin = async (e) => {
+    e.preventDefault();
+    if (newVendorPin.length !== 6) return alert("El PIN debe tener exactamente 6 dígitos.");
+    if (!currentUser?.id) return alert("No se pudo identificar el usuario.");
+    setIsSubmitting(true);
+    try {
+      await updateDoc(doc(db, "app_users", currentUser.id), { pin: newVendorPin });
+      alert("Su PIN fue cambiado exitosamente.");
+      setShowPinModal(false);
+      setNewVendorPin('');
+    } catch (e) {
+      alert("Error cambiando PIN");
     } finally {
       setIsSubmitting(false);
     }
@@ -468,7 +493,12 @@ const VendorDashboard = () => {
             )}
           </div>
         </div>
-        <div style={{display: 'flex', gap: '1rem'}}>
+        <div style={{display: 'flex', gap: '0.75rem', alignItems: 'center'}}>
+          {currentUser && currentUser.isPinUser && (
+            <button className="btn btn-secondary" onClick={() => setShowPinModal(true)}>
+              <KeyRound size={16} /> Cambiar PIN
+            </button>
+          )}
           {currentUser && (currentUser.email === 'admin@demob.com' || currentUser.email === 'pretsodatabase@gmail.com') && (
             <button className="btn btn-primary" onClick={() => navigate('/admin')}>
               Panel Admin
@@ -654,14 +684,6 @@ const VendorDashboard = () => {
             <div className="card glass-panel">
               <div className="flex-between" style={{marginBottom: '1rem'}}>
                 <h3><Package size={20} /> Inventario Actual</h3>
-                <button className="btn btn-secondary" onClick={() => exportToCSV('inventario_vendedor.csv', filteredInventoryProducts.map(p => ({
-                  CATEGORIA: p.category,
-                  PRODUCTO: p.name,
-                  PRECIO: p.price,
-                  STOCK: p.stock
-                })))}>
-                  <Download size={16} /> Exportar CSV
-                </button>
               </div>
 
               {/* Inventory Filters */}
@@ -929,6 +951,47 @@ const VendorDashboard = () => {
                   Confirmar y Cerrar Turno
                 </button>
               </form>
+            </div>
+          )}
+          {/* PIN Change Modal */}
+          {showPinModal && (
+            <div className="flex-center" style={{
+              position: 'fixed', 
+              top: 0, 
+              left: 0, 
+              right: 0, 
+              bottom: 0, 
+              background: 'rgba(0,0,0,0.5)', 
+              zIndex: 1000
+            }}>
+              <div className="card glass-panel" style={{width: '350px', background: '#ffffff'}}>
+                <h3>Cambiar Mi PIN de Acceso</h3>
+                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
+                  Ingrese su nuevo PIN de 6 dígitos.
+                </p>
+                <form onSubmit={handleChangePin}>
+                  <div className="form-group">
+                    <label>Nuevo PIN (6 dígitos)</label>
+                    <input 
+                      type="password"
+                      maxLength="6"
+                      className="input-field"
+                      style={{textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.25rem'}}
+                      value={newVendorPin}
+                      onChange={e => setNewVendorPin(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div style={{display: 'flex', gap: '0.5rem'}}>
+                    <button type="submit" className="btn btn-primary" style={{flex: 1}} disabled={isSubmitting || newVendorPin.length < 6}>
+                      Guardar
+                    </button>
+                    <button type="button" className="btn btn-secondary" style={{flex: 1}} onClick={() => {setShowPinModal(false); setNewVendorPin('');}}>
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
         </>

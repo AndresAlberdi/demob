@@ -74,7 +74,7 @@ describe('DemoB UI & Authentication Unit Tests', () => {
 
     expect(emailInput).toBeInTheDocument();
     expect(emailInput).toHaveAttribute('autoComplete', 'username');
-    expect(emailInput).toHaveAttribute('name', 'username');
+    expect(emailInput).toHaveAttribute('name', 'email');
 
     expect(passwordInput).toBeInTheDocument();
     expect(passwordInput).toHaveAttribute('autoComplete', 'current-password');

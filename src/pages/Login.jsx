@@ -68,79 +68,89 @@ const Login = () => {
 
         {error && <div className="error-message">{error}</div>}
         
-        {loginMethod === 'email' ? (
-          <form onSubmit={handleEmailSubmit} method="post" action="#">
-            <div className="form-group">
-              <label htmlFor="admin-username">Correo Electrónico</label>
-              <input 
-                id="admin-username"
-                name="username"
-                type="email" 
-                className="input-field" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@demob.com"
-                autoComplete="username"
-                required
-              />
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="admin-password">Contraseña</label>
-              <input 
-                id="admin-password"
-                name="password"
-                type="password" 
-                className="input-field" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                required
-              />
-            </div>
-            
-            <button 
-              type="submit" 
-              className="btn btn-primary btn-block"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>
-              ) : (
-                'Ingresar como Admin'
-              )}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handlePinSubmit}>
-            <div className="form-group">
-              <label>PIN de Acceso</label>
-              <input 
-                type="password" 
-                className="input-field" 
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="••••••"
-                maxLength="6"
-                required
-                style={{textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.25rem'}}
-              />
-            </div>
-            
-            <button 
-              type="submit" 
-              className="btn btn-primary btn-block"
-              disabled={isSubmitting || pin.length < 6}
-            >
-              {isSubmitting ? (
-                <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>
-              ) : (
-                'Ingresar al POS'
-              )}
-            </button>
-          </form>
-        )}
+        {/* Admin Form (Always in DOM for Chrome Password Manager detection) */}
+        <form 
+          onSubmit={handleEmailSubmit} 
+          method="post" 
+          action="#"
+          style={{ display: loginMethod === 'email' ? 'block' : 'none' }}
+        >
+          <div className="form-group">
+            <label htmlFor="admin-email">Correo Electrónico</label>
+            <input 
+              id="admin-email"
+              name="email"
+              type="email" 
+              className="input-field" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@demob.com"
+              autoComplete="username"
+              required={loginMethod === 'email'}
+            />
+          </div>
+          
+          <div className="form-group">
+            <label htmlFor="admin-password">Contraseña</label>
+            <input 
+              id="admin-password"
+              name="password"
+              type="password" 
+              className="input-field" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              required={loginMethod === 'email'}
+            />
+          </div>
+          
+          <button 
+            type="submit" 
+            className="btn btn-primary btn-block"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>
+            ) : (
+              'Ingresar como Admin'
+            )}
+          </button>
+        </form>
+
+        {/* Vendor PIN Form */}
+        <form 
+          onSubmit={handlePinSubmit}
+          style={{ display: loginMethod === 'pin' ? 'block' : 'none' }}
+        >
+          <div className="form-group">
+            <label htmlFor="vendor-pin">PIN de Acceso</label>
+            <input 
+              id="vendor-pin"
+              name="pin"
+              type="password" 
+              className="input-field" 
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="••••••"
+              maxLength="6"
+              required={loginMethod === 'pin'}
+              style={{textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.25rem'}}
+            />
+          </div>
+          
+          <button 
+            type="submit" 
+            className="btn btn-primary btn-block"
+            disabled={isSubmitting || pin.length < 6}
+          >
+            {isSubmitting ? (
+              <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>
+            ) : (
+              'Ingresar al POS'
+            )}
+          </button>
+        </form>
       </div>
     </div>
   );

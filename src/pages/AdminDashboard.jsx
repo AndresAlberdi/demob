@@ -1,10 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
-import { collection, query, getDocs, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy } from 'firebase/firestore';
-import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity } from 'lucide-react';
+import { collection, query, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy } from 'firebase/firestore';
+import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity, Download } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { parseAndUploadCSV } from '../utils/csvParser';
+import { exportToCSV } from '../utils/csvExporter';
+
+const formatDate = (val) => {
+  if (!val) return '-';
+  try {
+    if (typeof val.toDate === 'function') return val.toDate().toLocaleString();
+    if (val.seconds) return new Date(val.seconds * 1000).toLocaleString();
+    if (typeof val === 'string' || typeof val === 'number') return new Date(val).toLocaleString();
+  } catch (e) {
+    return '-';
+  }
+  return '-';
+};
 
 const AdminDashboard = () => {
   const { logout, currentUser } = useAuth();
@@ -55,14 +68,14 @@ const AdminDashboard = () => {
     try {
       // Load products
       const pSnap = await getDocs(query(collection(db, "products")));
-      setProducts(pSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => a.name.localeCompare(b.name)));
+      setProducts(pSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (a.name || '').localeCompare(b.name || '')));
       
       // Load users
       const uSnap = await getDocs(query(collection(db, "app_users")));
       setAppUsers(uSnap.docs.map(d => ({id: d.id, ...d.data()})));
       
       // Load motivos
-      const mSnap = await getDocs(doc(db, "settings", "motivos"));
+      const mSnap = await getDoc(doc(db, "settings", "motivos"));
       if (mSnap.exists()) {
         setMotivos(mSnap.data().list || []);
       }
@@ -84,7 +97,7 @@ const AdminDashboard = () => {
       setOrders(oSnap.docs.map(d => ({id: d.id, ...d.data()})));
       
     } catch (e) {
-      console.error(e);
+      console.error("Error loading data:", e);
     } finally {
       setIsLoading(false);
     }
@@ -353,14 +366,20 @@ const AdminDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {sales.slice(-10).reverse().map(s => (
-                  <tr key={s.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
-                    <td style={{padding: '0.5rem'}}>{s.timestamp ? new Date(s.timestamp.toDate()).toLocaleString() : 'Reciente'}</td>
-                    <td style={{padding: '0.5rem'}}>{s.method}</td>
-                    <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{s.items.map(i => `${i.qty}x ${i.name}`).join(', ')}</td>
-                    <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {s.total.toFixed(2)}</td>
-                  </tr>
-                ))}
+                {[...sales]
+                  .sort((a, b) => {
+                    const tA = a.timestamp?.seconds || (a.timestamp ? new Date(a.timestamp).getTime()/1000 : 0);
+                    const tB = b.timestamp?.seconds || (b.timestamp ? new Date(b.timestamp).getTime()/1000 : 0);
+                    return tB - tA;
+                  })
+                  .map(s => (
+                    <tr key={s.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                      <td style={{padding: '0.5rem'}}>{formatDate(s.timestamp)}</td>
+                      <td style={{padding: '0.5rem'}}>{s.method}</td>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{s.items?.map(i => `${i.qty}x ${i.name}`).join(', ') || '-'}</td>
+                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {(s.total || 0).toFixed(2)}</td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
@@ -434,11 +453,14 @@ const AdminDashboard = () => {
                 {products
                   .filter(p => !p.isDeleted)
                   .filter(p => {
-                    const matchSearch = p.name?.toLowerCase().includes(adminSearch.toLowerCase());
+                    const prodName = p.name || '';
+                    const matchSearch = prodName.toLowerCase().includes((adminSearch || '').toLowerCase());
                     const matchCat = adminCategoryFilter === 'todas' || p.category === adminCategoryFilter;
-                    const price = p.price || 0;
-                    const matchMin = adminMinPrice === '' || price >= parseFloat(adminMinPrice);
-                    const matchMax = adminMaxPrice === '' || price <= parseFloat(adminMaxPrice);
+                    const price = parseFloat(p.price) || 0;
+                    const minP = parseFloat(adminMinPrice);
+                    const maxP = parseFloat(adminMaxPrice);
+                    const matchMin = adminMinPrice === '' || isNaN(minP) || price >= minP;
+                    const matchMax = adminMaxPrice === '' || isNaN(maxP) || price <= maxP;
                     return matchSearch && matchCat && matchMin && matchMax;
                   })
                   .map(p => {
@@ -654,8 +676,8 @@ const AdminDashboard = () => {
                         )}
                       </td>
                       <td style={{padding: '0.5rem', fontSize: '0.8rem'}}>
-                        <div>Apertura: {sh.startTime ? new Date(sh.startTime.toDate()).toLocaleString() : '-'}</div>
-                        <div>Cierre: {sh.endTime ? new Date(sh.endTime.toDate()).toLocaleString() : 'En curso'}</div>
+                        <div>Apertura: {formatDate(sh.startTime)}</div>
+                        <div>Cierre: {sh.endTime ? formatDate(sh.endTime) : 'En curso'}</div>
                       </td>
                       <td style={{padding: '0.5rem'}}>Bs. {(sh.startCash || 0).toFixed(2)}</td>
                       <td style={{padding: '0.5rem', color: 'var(--secondary-color)', fontWeight: '500'}}>+Bs. {cashSales.toFixed(2)}</td>
