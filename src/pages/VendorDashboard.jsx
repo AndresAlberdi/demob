@@ -5,6 +5,7 @@ import { collection, query, getDocs, addDoc, serverTimestamp, where, updateDoc, 
 import { Search, ShoppingCart, LogOut, Package, CreditCard, Banknote, Coffee, History, AlertTriangle, Send, Clock, ShieldAlert, Download, Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { exportToCSV } from '../utils/csvExporter';
+import { logEvent } from '../utils/logger';
 
 const VendorDashboard = () => {
   const { logout, currentUser } = useAuth();
@@ -182,8 +183,9 @@ const VendorDashboard = () => {
       };
       const docRef = await addDoc(collection(db, "shifts"), shiftData);
       setActiveShift({ id: docRef.id, ...shiftData });
+      await logEvent('OPEN_SHIFT', currentUser.name || currentUser.email, `Apertura de turno con caja inicial de Bs. ${parseFloat(startCash).toFixed(2)}`, parseFloat(startCash));
     } catch (e) {
-      alert('Error abriendo turno');
+      alert('Error abriendo turno: ' + (e.message || e));
     } finally {
       setIsSubmitting(false);
     }
@@ -191,27 +193,17 @@ const VendorDashboard = () => {
 
   const closeShift = async (e) => {
     e.preventDefault();
-    if (!endCash || isNaN(endCash)) return alert('Ingrese el dinero físico actual');
+    if (!endCash || isNaN(endCash)) return alert('Ingrese el dinero físico actual en caja');
+    if (!activeShift?.id) return alert('No hay turno activo para cerrar');
     setIsSubmitting(true);
     try {
-      // Calc sales & expenses during shift
-      const salesQuery = query(collection(db, "sales"), where("shiftId", "==", activeShift.id));
-      const salesSnap = await getDocs(salesQuery);
-      let totalCashSales = 0;
-      let totalQRSales = 0;
-      salesSnap.forEach(d => {
-        if (d.data().method === 'Efectivo') totalCashSales += d.data().total;
-        if (d.data().method === 'QR') totalQRSales += d.data().total;
-      });
+      // Calculate sales & expenses from shiftOperations safely
+      const shiftSales = shiftOperations.filter(o => o.opType === 'Venta');
+      let totalCashSales = shiftSales.filter(o => o.method === 'Efectivo').reduce((acc, o) => acc + o.amount, 0);
+      let totalQRSales = shiftSales.filter(o => o.method === 'QR').reduce((acc, o) => acc + o.amount, 0);
+      let totalExpenses = Math.abs(shiftOperations.filter(o => o.amount < 0).reduce((acc, o) => acc + o.amount, 0));
 
-      const ordersQuery = query(collection(db, "orders"), where("shiftId", "==", activeShift.id));
-      const ordersSnap = await getDocs(ordersQuery);
-      let totalExpenses = 0;
-      ordersSnap.forEach(d => {
-        totalExpenses += d.data().amount;
-      });
-
-      const expectedCash = activeShift.startCash + totalCashSales - totalExpenses;
+      const expectedCash = (activeShift.startCash || 0) + totalCashSales - totalExpenses;
       const physicalCash = parseFloat(endCash);
       const difference = physicalCash - expectedCash;
 
@@ -226,11 +218,19 @@ const VendorDashboard = () => {
         status: 'closed'
       });
 
+      await logEvent(
+        'CLOSE_SHIFT', 
+        currentUser.name || currentUser.email, 
+        `Cierre de turno. Esperado Ef.: Bs. ${expectedCash.toFixed(2)}, Físico: Bs. ${physicalCash.toFixed(2)}, Dif.: Bs. ${difference.toFixed(2)}, Ventas QR: Bs. ${totalQRSales.toFixed(2)}`,
+        physicalCash
+      );
+
       alert(`Turno cerrado con éxito.\n\n--- CAJA LOCAL (EFECTIVO) ---\nEsperado en caja: Bs. ${expectedCash.toFixed(2)}\nFísico contado: Bs. ${physicalCash.toFixed(2)}\nDiferencia: Bs. ${difference.toFixed(2)}\n\n--- BANCO (QR) ---\nVentas por QR: Bs. ${totalQRSales.toFixed(2)}`);
       setActiveShift(null);
       setEndCash('');
     } catch (e) {
-      alert('Error cerrando turno');
+      console.error("Error closing shift:", e);
+      alert('Error cerrando turno: ' + (e.message || e));
     } finally {
       setIsSubmitting(false);
     }

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
-import { collection, query, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy } from 'firebase/firestore';
-import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity, Download } from 'lucide-react';
+import { collection, query, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy, serverTimestamp } from 'firebase/firestore';
+import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity, Download, Filter, FileText, Calendar, ListFilter } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { parseAndUploadCSV } from '../utils/csvParser';
 import { exportToCSV } from '../utils/csvExporter';
+import { logEvent } from '../utils/logger';
 
 const formatDate = (val) => {
   if (!val) return '-';
@@ -22,18 +23,28 @@ const formatDate = (val) => {
 const AdminDashboard = () => {
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('reports'); // reports, inventory, users, losses
+  const [activeTab, setActiveTab] = useState('reports'); // reports, inventory, shifts, users, losses, logs
   const [isLoading, setIsLoading] = useState(false);
   
   // Data states
   const [products, setProducts] = useState([]);
   const [appUsers, setAppUsers] = useState([]);
   const [motivos, setMotivos] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [pendingLosses, setPendingLosses] = useState([]);
+  const [allLosses, setAllLosses] = useState([]);
   const [sales, setSales] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [loans, setLoans] = useState([]);
+  const [systemLogs, setSystemLogs] = useState([]);
   
+  // Periodicity Report Filter States
+  const [periodFilter, setPeriodFilter] = useState('hoy'); // hoy, semana, mes, personalizado
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
+  const [reportSubTab, setReportSubTab] = useState('all'); // all, losses, loans, orders
+
   // CSV Form State
   const [csvHasHeader, setCsvHasHeader] = useState(true);
   
@@ -41,8 +52,13 @@ const AdminDashboard = () => {
   const [newUser, setNewUser] = useState({ name: '', pin: '' });
   const [newMotivo, setNewMotivo] = useState('');
   
+  // Category ABM State
+  const [newCatName, setNewCatName] = useState('');
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editCatName, setEditCatName] = useState('');
+
   // Product Edit States
-  const [editingProduct, setEditingProduct] = useState(null); // product object or null
+  const [editingProduct, setEditingProduct] = useState(null);
   const [editProdForm, setEditProdForm] = useState({ name: '', category: '', price: '', stock: '' });
   const [newProdForm, setNewProdForm] = useState({ name: '', category: 'CON GAS', price: '', stock: '10' });
   
@@ -68,8 +84,18 @@ const AdminDashboard = () => {
     try {
       // Load products
       const pSnap = await getDocs(query(collection(db, "products")));
-      setProducts(pSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (a.name || '').localeCompare(b.name || '')));
+      const loadedProds = pSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+      setProducts(loadedProds);
       
+      // Extract categories dynamically from products and category settings
+      const catSnap = await getDoc(doc(db, "settings", "categories"));
+      let dbCats = [];
+      if (catSnap.exists()) {
+        dbCats = catSnap.data().list || [];
+      }
+      const prodCats = Array.from(new Set(loadedProds.filter(p => !p.isDeleted).map(p => p.category).filter(Boolean)));
+      setCategories(Array.from(new Set([...dbCats, ...prodCats])));
+
       // Load users
       const uSnap = await getDocs(query(collection(db, "app_users")));
       setAppUsers(uSnap.docs.map(d => ({id: d.id, ...d.data()})));
@@ -80,21 +106,31 @@ const AdminDashboard = () => {
         setMotivos(mSnap.data().list || []);
       }
       
-      // Load pending losses
-      const lSnap = await getDocs(query(collection(db, "losses"), where("status", "==", "pending")));
-      setPendingLosses(lSnap.docs.map(d => ({id: d.id, ...d.data()})));
+      // Load losses
+      const lSnap = await getDocs(query(collection(db, "losses")));
+      const lList = lSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+      setAllLosses(lList);
+      setPendingLosses(lList.filter(l => l.status === 'pending'));
       
-      // Load sales for basic reports
+      // Load sales
       const sSnap = await getDocs(query(collection(db, "sales")));
       setSales(sSnap.docs.map(d => ({id: d.id, ...d.data()})));
       
-      // Load shifts for monitoring
+      // Load shifts
       const shSnap = await getDocs(query(collection(db, "shifts")));
       setShifts(shSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.startTime?.seconds || 0) - (a.startTime?.seconds || 0)));
       
-      // Load orders / expenses
+      // Load orders
       const oSnap = await getDocs(query(collection(db, "orders")));
       setOrders(oSnap.docs.map(d => ({id: d.id, ...d.data()})));
+
+      // Load loans
+      const loanSnap = await getDocs(query(collection(db, "loans")));
+      setLoans(loanSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+
+      // Load system logs
+      const logSnap = await getDocs(query(collection(db, "system_logs")));
+      setSystemLogs(logSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
       
     } catch (e) {
       console.error("Error loading data:", e);
@@ -104,6 +140,7 @@ const AdminDashboard = () => {
   };
 
   const handleLogout = async () => {
+    await logEvent('LOGOUT', currentUser?.email, 'Cierre de sesión de administrador');
     await logout();
     navigate('/login');
   };
@@ -115,6 +152,7 @@ const AdminDashboard = () => {
     setIsLoading(true);
     try {
       const result = await parseAndUploadCSV(file, csvHasHeader);
+      await logEvent('CSV_IMPORT', currentUser?.email, `Carga masiva de inventario por CSV: ${file.name}`);
       alert(result);
       loadData();
     } catch (error) {
@@ -122,6 +160,61 @@ const AdminDashboard = () => {
     } finally {
       setIsLoading(false);
       e.target.value = null;
+    }
+  };
+
+  // --- CATEGORY ABM ---
+  const handleCreateCategory = async (e) => {
+    e.preventDefault();
+    if (!newCatName.trim()) return;
+    const catUpper = newCatName.trim().toUpperCase();
+    try {
+      const updated = Array.from(new Set([...categories, catUpper]));
+      await setDoc(doc(db, "settings", "categories"), { list: updated });
+      await logEvent('CATEGORY_CREATED', currentUser?.email, `Creada nueva categoría: "${catUpper}"`);
+      setNewCatName('');
+      loadData();
+    } catch (e) {
+      alert("Error creando categoría");
+    }
+  };
+
+  const handleRenameCategory = async (oldCat) => {
+    if (!editCatName.trim()) return;
+    const newCat = editCatName.trim().toUpperCase();
+    if (oldCat === newCat) return setEditingCategory(null);
+    setIsLoading(true);
+    try {
+      const prodsToRename = products.filter(p => p.category === oldCat);
+      for (const p of prodsToRename) {
+        await updateDoc(doc(db, "products", p.id), { category: newCat });
+      }
+      const updated = categories.map(c => c === oldCat ? newCat : c);
+      await setDoc(doc(db, "settings", "categories"), { list: Array.from(new Set(updated)) });
+      await logEvent('CATEGORY_RENAMED', currentUser?.email, `Renombrada categoría "${oldCat}" a "${newCat}" en ${prodsToRename.length} productos`);
+      setEditingCategory(null);
+      setEditCatName('');
+      loadData();
+    } catch (e) {
+      alert("Error renombrando categoría");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteCategory = async (catToDelete) => {
+    const activeProds = products.filter(p => p.category === catToDelete && !p.isDeleted);
+    if (activeProds.length > 0) {
+      return alert(`No se puede eliminar "${catToDelete}" porque tiene ${activeProds.length} productos activos. Reasigne los productos primero.`);
+    }
+    if (!window.confirm(`¿Eliminar la categoría "${catToDelete}"?`)) return;
+    try {
+      const updated = categories.filter(c => c !== catToDelete);
+      await setDoc(doc(db, "settings", "categories"), { list: updated });
+      await logEvent('CATEGORY_DELETED', currentUser?.email, `Eliminada categoría: "${catToDelete}"`);
+      loadData();
+    } catch (e) {
+      alert("Error eliminando categoría");
     }
   };
 
@@ -137,6 +230,7 @@ const AdminDashboard = () => {
         stock: parseInt(newProdForm.stock) || 0,
         isDeleted: false
       });
+      await logEvent('PRODUCT_CREATED', currentUser?.email, `Creado producto manual "${newProdForm.name}" (${newProdForm.category}) - Bs. ${newProdForm.price}, Stock: ${newProdForm.stock}`);
       alert("Producto creado exitosamente");
       setNewProdForm({ name: '', category: 'CON GAS', price: '', stock: '10' });
       loadData();
@@ -163,6 +257,7 @@ const AdminDashboard = () => {
         price: parseFloat(editProdForm.price),
         stock: parseInt(editProdForm.stock)
       });
+      await logEvent('PRODUCT_UPDATED', currentUser?.email, `Editado producto "${editProdForm.name}": Precio Bs. ${editProdForm.price}, Stock ${editProdForm.stock}`);
       setEditingProduct(null);
       loadData();
     } catch (e) {
@@ -174,6 +269,7 @@ const AdminDashboard = () => {
     if (!window.confirm(`¿Quitar/Eliminar el producto "${productName}"? (Se ocultará del inventario y ventas).`)) return;
     try {
       await updateDoc(doc(db, "products", productId), { isDeleted: true });
+      await logEvent('PRODUCT_DELETED', currentUser?.email, `Quitado producto "${productName}" (Soft-Delete)`);
       loadData();
     } catch (e) {
       alert("Error eliminando producto");
@@ -191,12 +287,52 @@ const AdminDashboard = () => {
       for (const p of prodsToMove) {
         await updateDoc(doc(db, "products", p.id), { category: moveToCategory });
       }
+      await logEvent('CATEGORY_MOVED', currentUser?.email, `Reasignación masiva de ${prodsToMove.length} productos de "${moveFromCategory}" a "${moveToCategory}"`);
       alert(`Se movieron ${prodsToMove.length} productos de "${moveFromCategory}" a "${moveToCategory}".`);
       setMoveFromCategory('');
       setMoveToCategory('');
       loadData();
     } catch (e) {
       alert("Error reasignando categorías");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- LOSS APPROVAL FIX ---
+  const handleLoss = async (lossId, approved) => {
+    setIsLoading(true);
+    try {
+      const lossDoc = allLosses.find(l => l.id === lossId);
+      if (!lossDoc) return;
+
+      if (approved) {
+        // Find product and discount stock
+        const prod = products.find(p => p.id === lossDoc.productId || p.name === lossDoc.productName);
+        if (prod) {
+          const newStock = Math.max(0, (prod.stock || 0) - (lossDoc.qty || 1));
+          await updateDoc(doc(db, "products", prod.id), { stock: newStock });
+        }
+        await updateDoc(doc(db, "losses", lossId), { 
+          status: 'approved',
+          approvedBy: currentUser?.email || 'Admin',
+          approvedAt: serverTimestamp()
+        });
+        await logEvent('LOSS_APPROVED', currentUser?.email, `Aprobada pérdida de ${lossDoc.qty}x ${lossDoc.productName} (${lossDoc.reason}). Stock descontado.`);
+        alert('Pérdida aprobada y stock descontado correctamente.');
+      } else {
+        await updateDoc(doc(db, "losses", lossId), { 
+          status: 'rejected',
+          rejectedBy: currentUser?.email || 'Admin',
+          rejectedAt: serverTimestamp()
+        });
+        await logEvent('LOSS_REJECTED', currentUser?.email, `Rechazada pérdida de ${lossDoc.qty}x ${lossDoc.productName}`);
+        alert('Pérdida rechazada.');
+      }
+      loadData();
+    } catch (e) {
+      console.error("Error procesando pérdida:", e);
+      alert("Error procesando pérdida: " + (e.message || e));
     } finally {
       setIsLoading(false);
     }
@@ -212,6 +348,7 @@ const AdminDashboard = () => {
         pin: newUser.pin,
         role: 'vendedor'
       });
+      await logEvent('USER_CREATED', currentUser?.email, `Registrado nuevo vendedor: "${newUser.name}"`);
       setNewUser({name: '', pin: ''});
       loadData();
     } catch (e) {
@@ -222,6 +359,7 @@ const AdminDashboard = () => {
   const deleteUser = async (id) => {
     if(!window.confirm("¿Eliminar usuario?")) return;
     await deleteDoc(doc(db, "app_users", id));
+    await logEvent('USER_DELETED', currentUser?.email, `Eliminado usuario id ${id}`);
     loadData();
   };
 
@@ -229,6 +367,7 @@ const AdminDashboard = () => {
     if (editPinValue.length !== 6) return alert("El PIN debe tener 6 dígitos");
     try {
       await updateDoc(doc(db, "app_users", id), { pin: editPinValue });
+      await logEvent('PIN_CHANGED', currentUser?.email, `Cambiado PIN de vendedor id ${id}`);
       setEditingUser(null);
       loadData();
     } catch (e) {
@@ -243,40 +382,116 @@ const AdminDashboard = () => {
     try {
       const updatedList = [...motivos, newMotivo];
       await setDoc(doc(db, "settings", "motivos"), { list: updatedList });
+      await logEvent('MOTIVO_CREATED', currentUser?.email, `Agregado nuevo motivo de pérdida: "${newMotivo}"`);
       setNewMotivo('');
       loadData();
     } catch (e) {
-      alert("Error");
+      alert("Error agregando motivo");
     }
   };
   
   const deleteMotivo = async (m) => {
     const updatedList = motivos.filter(mot => mot !== m);
     await setDoc(doc(db, "settings", "motivos"), { list: updatedList });
+    await logEvent('MOTIVO_DELETED', currentUser?.email, `Eliminado motivo de pérdida: "${m}"`);
     loadData();
   };
 
-  // --- SHIFT CONTROL ---
+  // --- SHIFT CONTROL WITH CASH ENTRY ---
   const forceCloseShift = async (shiftId, vendorName) => {
-    if (!window.confirm(`¿Forzar el cierre del turno activo de ${vendorName}?`)) return;
+    const cashInput = window.prompt(`Ingrese el dinero físico contado en caja para cerrar el turno de ${vendorName}:`, '0');
+    if (cashInput === null) return; // User cancelled
+    const physicalCash = parseFloat(cashInput) || 0;
+
+    setIsLoading(true);
     try {
+      const shiftSales = sales.filter(s => s.shiftId === shiftId);
+      const cashSales = shiftSales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
+      const qrSales = shiftSales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
+      const shiftExpenses = orders.filter(o => o.shiftId === shiftId).reduce((acc, o) => acc + o.amount, 0);
+      
+      const shDoc = shifts.find(s => s.id === shiftId);
+      const startCash = shDoc?.startCash || 0;
+      const expectedCash = startCash + cashSales - shiftExpenses;
+      const difference = physicalCash - expectedCash;
+
       await updateDoc(doc(db, "shifts", shiftId), {
         status: 'closed',
         endTime: serverTimestamp(),
-        forceClosedBy: currentUser.email || 'Admin'
+        endCash: physicalCash,
+        expectedCash,
+        totalCashSales: cashSales,
+        totalQRSales: qrSales,
+        totalExpenses: shiftExpenses,
+        difference,
+        forceClosedBy: currentUser?.email || 'Admin'
       });
-      alert('Turno cerrado forzosamente.');
+
+      await logEvent(
+        'FORCE_CLOSE_SHIFT',
+        currentUser?.email,
+        `Cierre forzado de turno de ${vendorName}. Esperado: Bs. ${expectedCash.toFixed(2)}, Rendido: Bs. ${physicalCash.toFixed(2)}, Dif: Bs. ${difference.toFixed(2)}`,
+        physicalCash
+      );
+
+      alert(`Turno cerrado forzosamente.\n\nEsperado en caja: Bs. ${expectedCash.toFixed(2)}\nFísico ingresado: Bs. ${physicalCash.toFixed(2)}\nDiferencia: Bs. ${difference.toFixed(2)}`);
       loadData();
     } catch (e) {
-      alert('Error cerrando turno');
+      alert('Error cerrando turno: ' + (e.message || e));
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // --- RENDER ---
-  // Simple Report Calcs
-  const totalSales = sales.reduce((acc, s) => acc + s.total, 0);
-  const totalCash = sales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
-  const totalQR = sales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
+  // --- PERIODICITY FILTER CALCULATIONS ---
+  const getFilteredByPeriod = () => {
+    const now = new Date();
+    let startLimit = new Date(0);
+    let endLimit = new Date(now.getFullYear() + 10, 11, 31, 23, 59, 59);
+
+    if (periodFilter === 'hoy') {
+      startLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+      endLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    } else if (periodFilter === 'semana') {
+      const day = now.getDay();
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday
+      startLimit = new Date(now.setDate(diff));
+      startLimit.setHours(0,0,0,0);
+    } else if (periodFilter === 'mes') {
+      startLimit = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+    } else if (periodFilter === 'personalizado') {
+      if (startDateFilter) startLimit = new Date(`${startDateFilter}T00:00:00`);
+      if (endDateFilter) endLimit = new Date(`${endDateFilter}T23:59:59`);
+    }
+
+    const checkTs = (ts) => {
+      if (!ts) return false;
+      let dt;
+      if (typeof ts.toDate === 'function') dt = ts.toDate();
+      else if (ts.seconds) dt = new Date(ts.seconds * 1000);
+      else dt = new Date(ts);
+      return dt >= startLimit && dt <= endLimit;
+    };
+
+    const periodSales = sales.filter(s => checkTs(s.timestamp));
+    const periodOrders = orders.filter(o => checkTs(o.timestamp));
+    const periodLoans = loans.filter(l => checkTs(l.timestamp) || checkTs(l.repaidAt));
+    const periodLosses = allLosses.filter(l => checkTs(l.timestamp));
+
+    return { periodSales, periodOrders, periodLoans, periodLosses };
+  };
+
+  const { periodSales, periodOrders, periodLoans, periodLosses } = getFilteredByPeriod();
+
+  // Metrics based on period
+  const pCashSales = periodSales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
+  const pQRSales = periodSales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
+  const pPurchases = periodOrders.reduce((acc, o) => acc + o.amount, 0);
+  const pLoanRepayments = periodLoans.filter(l => l.status === 'repaid').reduce((acc, l) => acc + l.amount, 0);
+  
+  const pTotalIncome = pCashSales + pQRSales + pLoanRepayments;
+  const pTotalExpenses = pPurchases;
+  const pCashBalance = pCashSales + pLoanRepayments - pPurchases;
 
   // Active shift calculations
   const activeShiftDoc = shifts.find(s => s.status === 'open');
@@ -304,7 +519,7 @@ const AdminDashboard = () => {
                 fontSize: '0.9rem',
                 boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
               }}>
-                💰 Caja Actual (Turno Activo: {activeShiftDoc.vendorName}): Bs. {activeShiftCash.toFixed(2)}
+                💵 Caja Actual (Turno Activo: {activeShiftDoc.vendorName}): Bs. {activeShiftCash.toFixed(2)}
               </span>
             </div>
           )}
@@ -317,9 +532,9 @@ const AdminDashboard = () => {
         </div>
       </div>
       
-      <div className="tabs">
+      <div className="tabs" style={{flexWrap: 'wrap'}}>
         <div className={`tab ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}>
-          <BarChart3 size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Reportes
+          <BarChart3 size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Reportes Financieros
         </div>
         <div className={`tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>
           <Package size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Inventario & Productos
@@ -331,67 +546,350 @@ const AdminDashboard = () => {
           <Users size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Vendedores
         </div>
         <div className={`tab ${activeTab === 'losses' ? 'active' : ''}`} onClick={() => setActiveTab('losses')}>
-          <ShieldAlert size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Pérdidas & Ajustes
+          <ShieldAlert size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Pérdidas & Ajustes ({pendingLosses.length})
+        </div>
+        <div className={`tab ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
+          <FileText size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Logs del Sistema
         </div>
       </div>
       
       {isLoading && <div className="flex-center" style={{padding: '2rem'}}>Cargando...</div>}
       
+      {/* --- REPORTS TAB WITH PERIODICITY & SUB-REPORTS --- */}
       {!isLoading && activeTab === 'reports' && (
-        <>
-          <div className="dashboard-grid">
-            <div className="card glass-panel">
-              <h3 className="card-title">Total Ventas (Global)</h3>
-              <div className="card-value">Bs. {totalSales.toFixed(2)}</div>
+        <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+          {/* Period Filter Selector */}
+          <div className="card glass-panel flex-between" style={{flexWrap: 'wrap', gap: '1rem'}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+              <Calendar size={20} style={{color: 'var(--primary-color)'}} />
+              <h3 style={{margin: 0}}>Filtro de Periodicidad</h3>
             </div>
-            <div className="card glass-panel">
-              <h3 className="card-title">Ventas en Efectivo</h3>
-              <div className="card-value">Bs. {totalCash.toFixed(2)}</div>
-            </div>
-            <div className="card glass-panel">
-              <h3 className="card-title">Ventas por QR</h3>
-              <div className="card-value">Bs. {totalQR.toFixed(2)}</div>
+            <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center'}}>
+              <button className={`btn ${periodFilter === 'hoy' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPeriodFilter('hoy')}>Hoy</button>
+              <button className={`btn ${periodFilter === 'semana' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPeriodFilter('semana')}>Esta Semana</button>
+              <button className={`btn ${periodFilter === 'mes' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPeriodFilter('mes')}>Este Mes</button>
+              <button className={`btn ${periodFilter === 'personalizado' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPeriodFilter('personalizado')}>Entre Fechas</button>
+
+              {periodFilter === 'personalizado' && (
+                <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center', marginLeft: '0.5rem'}}>
+                  <input type="date" className="input-field" value={startDateFilter} onChange={e => setStartDateFilter(e.target.value)} />
+                  <span>a</span>
+                  <input type="date" className="input-field" value={endDateFilter} onChange={e => setEndDateFilter(e.target.value)} />
+                </div>
+              )}
             </div>
           </div>
-          
-          <div className="card glass-panel" style={{marginTop: '1.5rem'}}>
-            <h3>Últimas Ventas Registradas</h3>
-            <table style={{width: '100%', borderCollapse: 'collapse', marginTop: '1rem'}}>
-              <thead>
-                <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
-                  <th style={{padding: '0.5rem'}}>Fecha (Aprox)</th>
-                  <th style={{padding: '0.5rem'}}>Método</th>
-                  <th style={{padding: '0.5rem'}}>Detalle</th>
-                  <th style={{padding: '0.5rem'}}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...sales]
-                  .sort((a, b) => {
-                    const tA = a.timestamp?.seconds || (a.timestamp ? new Date(a.timestamp).getTime()/1000 : 0);
-                    const tB = b.timestamp?.seconds || (b.timestamp ? new Date(b.timestamp).getTime()/1000 : 0);
-                    return tB - tA;
-                  })
-                  .map(s => (
-                    <tr key={s.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
-                      <td style={{padding: '0.5rem'}}>{formatDate(s.timestamp)}</td>
-                      <td style={{padding: '0.5rem'}}>{s.method}</td>
-                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{s.items?.map(i => `${i.qty}x ${i.name}`).join(', ') || '-'}</td>
-                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {(s.total || 0).toFixed(2)}</td>
+
+          {/* Dynamic Financial Summary Cards */}
+          <div className="dashboard-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))'}}>
+            <div className="card glass-panel" style={{borderLeft: '4px solid #10b981'}}>
+              <h3 className="card-title">💵 Ventas Efectivo</h3>
+              <div className="card-value">Bs. {pCashSales.toFixed(2)}</div>
+            </div>
+            <div className="card glass-panel" style={{borderLeft: '4px solid #3b82f6'}}>
+              <h3 className="card-title">📱 Ventas QR</h3>
+              <div className="card-value">Bs. {pQRSales.toFixed(2)}</div>
+            </div>
+            <div className="card glass-panel" style={{borderLeft: '4px solid #ef4444'}}>
+              <h3 className="card-title">🛒 Compras / Egresos</h3>
+              <div className="card-value">Bs. {pPurchases.toFixed(2)}</div>
+            </div>
+            <div className="card glass-panel" style={{borderLeft: '4px solid #8b5cf6'}}>
+              <h3 className="card-title">🔄 Cobro Préstamos</h3>
+              <div className="card-value">Bs. {pLoanRepayments.toFixed(2)}</div>
+            </div>
+            <div className="card glass-panel" style={{borderLeft: '4px solid #f59e0b'}}>
+              <h3 className="card-title">💰 Saldo Acumulado Caja</h3>
+              <div className="card-value">Bs. {pCashBalance.toFixed(2)}</div>
+            </div>
+            <div className="card glass-panel" style={{borderLeft: '4px solid #06b6d4'}}>
+              <h3 className="card-title">📈 Ingresos Totales</h3>
+              <div className="card-value">Bs. {pTotalIncome.toFixed(2)}</div>
+            </div>
+          </div>
+
+          {/* Sub-Reports Selector */}
+          <div className="card glass-panel">
+            <div className="flex-between" style={{marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem'}}>
+              <div className="tabs" style={{margin: 0}}>
+                <div className={`tab ${reportSubTab === 'all' ? 'active' : ''}`} onClick={() => setReportSubTab('all')}>Todas las Transacciones</div>
+                <div className={`tab ${reportSubTab === 'losses' ? 'active' : ''}`} onClick={() => setReportSubTab('losses')}>Reporte de Pérdidas</div>
+                <div className={`tab ${reportSubTab === 'loans' ? 'active' : ''}`} onClick={() => setReportSubTab('loans')}>Reporte de Préstamos</div>
+                <div className={`tab ${reportSubTab === 'orders' ? 'active' : ''}`} onClick={() => setReportSubTab('orders')}>Compras y Pedidos</div>
+              </div>
+              <button 
+                className="btn btn-secondary"
+                onClick={() => {
+                  if (reportSubTab === 'all') {
+                    exportToCSV('transacciones.csv', periodSales.map(s => ({
+                      FECHA: formatDate(s.timestamp), METODO: s.method, TOTAL: s.total, VENDEDOR: s.vendorName || '-'
+                    })));
+                  } else if (reportSubTab === 'losses') {
+                    exportToCSV('reporte_perdidas.csv', periodLosses.map(l => ({
+                      FECHA: formatDate(l.timestamp), PRODUCTO: l.productName, CANTIDAD: l.qty, MOTIVO: l.reason, ESTADO: l.status
+                    })));
+                  } else if (reportSubTab === 'loans') {
+                    exportToCSV('reporte_prestamos.csv', periodLoans.map(l => ({
+                      FECHA: formatDate(l.timestamp), PRESTATARIO: l.borrowerName, MONTO: l.amount, ESTADO: l.status
+                    })));
+                  } else if (reportSubTab === 'orders') {
+                    exportToCSV('reporte_compras.csv', periodOrders.map(o => ({
+                      FECHA: formatDate(o.timestamp), TIPO: o.type, DESCRIPCION: o.description, COMPROBANTE: o.receiptType, NUMERO: o.receiptNumber, MONTO: o.amount
+                    })));
+                  }
+                }}
+              >
+                <Download size={16} /> Exportar CSV
+              </button>
+            </div>
+
+            {/* Sub-Report 1: All Sales Transactions */}
+            {reportSubTab === 'all' && (
+              <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                    <th style={{padding: '0.5rem'}}>Fecha / Hora</th>
+                    <th style={{padding: '0.5rem'}}>Vendedor</th>
+                    <th style={{padding: '0.5rem'}}>Método</th>
+                    <th style={{padding: '0.5rem'}}>Detalle de Productos</th>
+                    <th style={{padding: '0.5rem', textAlign: 'right'}}>Total (Bs.)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {periodSales
+                    .sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
+                    .map(s => (
+                      <tr key={s.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                        <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{formatDate(s.timestamp)}</td>
+                        <td style={{padding: '0.5rem', fontWeight: '500'}}>{s.vendorName || 'Vendedor'}</td>
+                        <td style={{padding: '0.5rem'}}>
+                          <span className={`badge ${s.method === 'Efectivo' ? 'badge-success' : 'badge-primary'}`}>{s.method}</span>
+                        </td>
+                        <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{s.items?.map(i => `${i.qty}x ${i.name}`).join(', ') || '-'}</td>
+                        <td style={{padding: '0.5rem', textAlign: 'right', fontWeight: 'bold'}}>Bs. {(s.total || 0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  {periodSales.length === 0 && (
+                    <tr><td colSpan="5" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>No se registraron ventas en el periodo seleccionado.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {/* Sub-Report 2: Losses Report */}
+            {reportSubTab === 'losses' && (
+              <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                    <th style={{padding: '0.5rem'}}>Fecha</th>
+                    <th style={{padding: '0.5rem'}}>Vendedor</th>
+                    <th style={{padding: '0.5rem'}}>Producto</th>
+                    <th style={{padding: '0.5rem'}}>Cantidad</th>
+                    <th style={{padding: '0.5rem'}}>Motivo</th>
+                    <th style={{padding: '0.5rem'}}>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {periodLosses.map(l => (
+                    <tr key={l.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{formatDate(l.timestamp)}</td>
+                      <td style={{padding: '0.5rem'}}>{l.vendorName || '-'}</td>
+                      <td style={{padding: '0.5rem', fontWeight: '500'}}>{l.productName}</td>
+                      <td style={{padding: '0.5rem'}}>{l.qty}</td>
+                      <td style={{padding: '0.5rem'}}>{l.reason}</td>
+                      <td style={{padding: '0.5rem'}}>
+                        <span className={`badge ${l.status === 'approved' ? 'badge-success' : (l.status === 'rejected' ? 'badge-error' : 'badge-warning')}`}>
+                          {l.status === 'approved' ? 'Aprobado' : (l.status === 'rejected' ? 'Rechazado' : 'Pendiente')}
+                        </span>
+                      </td>
                     </tr>
                   ))}
-              </tbody>
-            </table>
+                  {periodLosses.length === 0 && (
+                    <tr><td colSpan="6" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>No hay pérdidas registradas en este periodo.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {/* Sub-Report 3: Loans Report */}
+            {reportSubTab === 'loans' && (
+              <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                    <th style={{padding: '0.5rem'}}>Fecha Registro</th>
+                    <th style={{padding: '0.5rem'}}>Prestatario / Cliente</th>
+                    <th style={{padding: '0.5rem'}}>Monto (Bs.)</th>
+                    <th style={{padding: '0.5rem'}}>Estado</th>
+                    <th style={{padding: '0.5rem'}}>Fecha Devolución</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {periodLoans.map(l => (
+                    <tr key={l.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{formatDate(l.timestamp)}</td>
+                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>{l.borrowerName}</td>
+                      <td style={{padding: '0.5rem'}}>Bs. {(l.amount || 0).toFixed(2)}</td>
+                      <td style={{padding: '0.5rem'}}>
+                        <span className={`badge ${l.status === 'repaid' ? 'badge-success' : 'badge-warning'}`}>
+                          {l.status === 'repaid' ? 'Devuelto' : 'Pendiente'}
+                        </span>
+                      </td>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{formatDate(l.repaidAt)}</td>
+                    </tr>
+                  ))}
+                  {periodLoans.length === 0 && (
+                    <tr><td colSpan="5" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>No se registraron préstamos en este periodo.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {/* Sub-Report 4: Orders & Purchases Report */}
+            {reportSubTab === 'orders' && (
+              <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                    <th style={{padding: '0.5rem'}}>Fecha</th>
+                    <th style={{padding: '0.5rem'}}>Tipo</th>
+                    <th style={{padding: '0.5rem'}}>Descripción del Gasto</th>
+                    <th style={{padding: '0.5rem'}}>Comprobante</th>
+                    <th style={{padding: '0.5rem'}}>N° Comprobante</th>
+                    <th style={{padding: '0.5rem', textAlign: 'right'}}>Monto (Bs.)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {periodOrders.map(o => (
+                    <tr key={o.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{formatDate(o.timestamp)}</td>
+                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>{o.type}</td>
+                      <td style={{padding: '0.5rem'}}>{o.description}</td>
+                      <td style={{padding: '0.5rem'}}>{o.receiptType}</td>
+                      <td style={{padding: '0.5rem'}}>{o.receiptNumber || '-'}</td>
+                      <td style={{padding: '0.5rem', textAlign: 'right', fontWeight: 'bold', color: 'var(--danger)'}}>Bs. {(o.amount || 0).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                  {periodOrders.length === 0 && (
+                    <tr><td colSpan="6" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>No hay compras ni egresos en este periodo.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
-        </>
+        </div>
       )}
 
+      {/* --- INVENTORY & PRODUCTS TAB (TOP CARDS + TABLE) --- */}
       {!isLoading && activeTab === 'inventory' && (
         <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
-          {/* Top Bar: Actions & CSV Import/Export */}
+          
+          {/* REORDERED TOP CARDS SECTION */}
+          <div className="dashboard-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))'}}>
+            
+            {/* Card 1: Create Product */}
+            <div className="card glass-panel">
+              <h3>Nuevo Producto (Manual)</h3>
+              <form onSubmit={handleCreateProduct}>
+                <div className="form-group">
+                  <label>Nombre / Descripción</label>
+                  <input type="text" className="input-field" value={newProdForm.name} onChange={e=>setNewProdForm({...newProdForm, name: e.target.value})} placeholder="Ej: Fanta 2L" required/>
+                </div>
+                <div className="form-group">
+                  <label>Categoría</label>
+                  <input type="text" className="input-field" value={newProdForm.category} onChange={e=>setNewProdForm({...newProdForm, category: e.target.value})} placeholder="Ej: CON GAS, DULCES..." required/>
+                </div>
+                <div style={{display: 'flex', gap: '0.5rem'}}>
+                  <div className="form-group" style={{flex: 1}}>
+                    <label>Precio (Bs.)</label>
+                    <input type="number" step="0.10" className="input-field" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm, price: e.target.value})} required/>
+                  </div>
+                  <div className="form-group" style={{flex: 1}}>
+                    <label>Stock Inicial</label>
+                    <input type="number" className="input-field" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm, stock: e.target.value})} required/>
+                  </div>
+                </div>
+                <button type="submit" className="btn btn-primary btn-block">Guardar Producto</button>
+              </form>
+            </div>
+
+            {/* Card 2: ABM de Categorías */}
+            <div className="card glass-panel">
+              <h3>ABM de Categorías</h3>
+              <form onSubmit={handleCreateCategory} style={{display: 'flex', gap: '0.5rem', marginBottom: '1rem'}}>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  value={newCatName} 
+                  onChange={e => setNewCatName(e.target.value)} 
+                  placeholder="Nueva categoría..." 
+                  required
+                />
+                <button type="submit" className="btn btn-primary">+</button>
+              </form>
+
+              <div className="item-list" style={{maxHeight: '220px', overflowY: 'auto'}}>
+                {categories.map(c => (
+                  <div key={c} className="list-item" style={{padding: '0.4rem 0.6rem'}}>
+                    {editingCategory === c ? (
+                      <div style={{display: 'flex', gap: '0.35rem', width: '100%'}}>
+                        <input 
+                          type="text" 
+                          className="input-field" 
+                          style={{padding: '0.2rem', fontSize: '0.85rem'}}
+                          value={editCatName}
+                          onChange={e => setEditCatName(e.target.value)}
+                        />
+                        <button className="btn btn-success" style={{padding: '0.2rem 0.4rem'}} onClick={() => handleRenameCategory(c)}><Check size={14}/></button>
+                        <button className="btn btn-secondary" style={{padding: '0.2rem 0.4rem'}} onClick={() => setEditingCategory(null)}><X size={14}/></button>
+                      </div>
+                    ) : (
+                      <>
+                        <span style={{fontWeight: '500'}}>{c}</span>
+                        <div style={{display: 'flex', gap: '0.25rem'}}>
+                          <button className="btn btn-secondary" style={{padding: '0.2rem 0.4rem', fontSize: '0.75rem'}} onClick={() => {setEditingCategory(c); setEditCatName(c);}}>
+                            Editar
+                          </button>
+                          <button className="btn btn-danger" style={{padding: '0.2rem 0.4rem', fontSize: '0.75rem'}} onClick={() => handleDeleteCategory(c)}>
+                            <X size={14}/>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Card 3: Bulk Category Reassignment */}
+            <div className="card glass-panel">
+              <h3>Reasignar Categoría en Bloque</h3>
+              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem'}}>
+                Transfiere todos los productos de una categoría hacia otra.
+              </p>
+              <form onSubmit={handleBulkMoveCategory}>
+                <div className="form-group">
+                  <label>Categoría Origen (Mover desde)</label>
+                  <select className="input-field" value={moveFromCategory} onChange={e=>setMoveFromCategory(e.target.value)} required>
+                    <option value="">Seleccione Origen...</option>
+                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Categoría Destino (Mover hacia)</label>
+                  <select className="input-field" value={moveToCategory} onChange={e=>setMoveToCategory(e.target.value)} required>
+                    <option value="">Seleccione Destino...</option>
+                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <button type="submit" className="btn btn-secondary btn-block">Transferir Productos</button>
+              </form>
+            </div>
+
+          </div>
+
+          {/* MAIN INVENTORY PRODUCTS TABLE */}
           <div className="card glass-panel">
-            <div className="flex-between" style={{marginBottom: '1rem'}}>
-              <h3>Gestión de Inventario y Productos</h3>
+            <div className="flex-between" style={{marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem'}}>
+              <h3>Catálogo de Productos ({products.filter(p => !p.isDeleted).length})</h3>
               <div style={{display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap'}}>
                 <label style={{fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer'}}>
                   <input 
@@ -399,7 +897,7 @@ const AdminDashboard = () => {
                     checked={csvHasHeader} 
                     onChange={e => setCsvHasHeader(e.target.checked)} 
                   />
-                  ¿Fila de títulos?
+                  ¿Fila de títulos en CSV?
                 </label>
                 <label className="btn btn-primary" style={{cursor: 'pointer'}}>
                   <Upload size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Cargar CSV
@@ -419,7 +917,7 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Filters */}
+            {/* Search & Filters */}
             <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem'}}>
               <input 
                 type="text" 
@@ -430,8 +928,9 @@ const AdminDashboard = () => {
                 onChange={e=>setAdminSearch(e.target.value)} 
               />
               <select className="input-field" style={{width: '180px'}} value={adminCategoryFilter} onChange={e=>setAdminCategoryFilter(e.target.value)}>
-                {['todas', ...Array.from(new Set(products.filter(p=>!p.isDeleted).map(p=>p.category).filter(Boolean)))].map(c => (
-                  <option key={c} value={c}>Categoría: {c.toUpperCase()}</option>
+                <option value="todas">Todas las Categorías</option>
+                {categories.map(c => (
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
               <input type="number" placeholder="Min Bs." className="input-field" style={{width: '100px'}} value={adminMinPrice} onChange={e=>setAdminMinPrice(e.target.value)} />
@@ -502,7 +1001,7 @@ const AdminDashboard = () => {
                               onChange={e => setEditProdForm({...editProdForm, price: e.target.value})} 
                             />
                           ) : (
-                            `Bs. ${p.price.toFixed(2)}`
+                            <span style={{fontWeight: 'bold'}}>Bs. {parseFloat(p.price || 0).toFixed(2)}</span>
                           )}
                         </td>
                         <td style={{padding: '0.5rem'}}>
@@ -510,12 +1009,14 @@ const AdminDashboard = () => {
                             <input 
                               type="number" 
                               className="input-field" 
-                              style={{width: '80px'}} 
+                              style={{width: '80px'}}
                               value={editProdForm.stock} 
                               onChange={e => setEditProdForm({...editProdForm, stock: e.target.value})} 
                             />
                           ) : (
-                            <span style={{fontWeight: 'bold', color: p.stock <= 0 ? 'var(--danger)' : 'inherit'}}>{p.stock || 0}</span>
+                            <span style={{fontWeight: 'bold', color: p.stock <= 0 ? 'var(--danger)' : 'inherit'}}>
+                              {p.stock !== undefined ? p.stock : 0}
+                            </span>
                           )}
                         </td>
                         <td style={{padding: '0.5rem', textAlign: 'center'}}>
@@ -541,63 +1042,12 @@ const AdminDashboard = () => {
               </tbody>
             </table>
           </div>
-
-          {/* Form grid: Create Product & Bulk Move Category */}
-          <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 1fr'}}>
-            <div className="card glass-panel">
-              <h3>Nuevo Producto (Manual)</h3>
-              <form onSubmit={handleCreateProduct}>
-                <div className="form-group">
-                  <label>Nombre / Descripción</label>
-                  <input type="text" className="input-field" value={newProdForm.name} onChange={e=>setNewProdForm({...newProdForm, name: e.target.value})} placeholder="Ej: Fanta 2L" required/>
-                </div>
-                <div className="form-group">
-                  <label>Categoría</label>
-                  <input type="text" className="input-field" value={newProdForm.category} onChange={e=>setNewProdForm({...newProdForm, category: e.target.value})} placeholder="Ej: CON GAS, DULCES..." required/>
-                </div>
-                <div style={{display: 'flex', gap: '0.5rem'}}>
-                  <div className="form-group" style={{flex: 1}}>
-                    <label>Precio (Bs.)</label>
-                    <input type="number" step="0.10" className="input-field" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm, price: e.target.value})} required/>
-                  </div>
-                  <div className="form-group" style={{flex: 1}}>
-                    <label>Stock Inicial</label>
-                    <input type="number" className="input-field" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm, stock: e.target.value})} required/>
-                  </div>
-                </div>
-                <button type="submit" className="btn btn-primary btn-block">Guardar Producto</button>
-              </form>
-            </div>
-
-            <div className="card glass-panel">
-              <h3>Reasignar Categoría en Bloque</h3>
-              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
-                Transfiere todos los productos de una categoría existente hacia otra nueva o existente.
-              </p>
-              <form onSubmit={handleBulkMoveCategory}>
-                <div className="form-group">
-                  <label>Categoría Origen</label>
-                  <select className="input-field" value={moveFromCategory} onChange={e=>setMoveFromCategory(e.target.value)} required>
-                    <option value="">Seleccione Origen...</option>
-                    {Array.from(new Set(products.filter(p=>!p.isDeleted).map(p=>p.category).filter(Boolean))).map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Categoría Destino (Nombre)</label>
-                  <input type="text" className="input-field" value={moveToCategory} onChange={e=>setMoveToCategory(e.target.value)} placeholder="Ej: BEBIDAS FRÍAS" required/>
-                </div>
-                <button type="submit" className="btn btn-secondary btn-block">Transferir Productos</button>
-              </form>
-            </div>
-          </div>
         </div>
       )}
 
+      {/* --- SHIFT MONITORING TAB --- */}
       {!isLoading && activeTab === 'shifts' && (
         <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
-          {/* Active Shift Card */}
           <div className="card glass-panel" style={{borderLeft: '4px solid var(--secondary-color)'}}>
             <div className="flex-between">
               <h3><Activity size={20} style={{color: 'var(--secondary-color)'}} /> Turno Activo Actual</h3>
@@ -619,7 +1069,7 @@ const AdminDashboard = () => {
                 </div>
                 <div>
                   <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Hora de Apertura</label>
-                  <p>{activeShiftDoc.startTime ? new Date(activeShiftDoc.startTime.toDate()).toLocaleString() : 'Reciente'}</p>
+                  <p>{formatDate(activeShiftDoc.startTime)}</p>
                 </div>
                 <div>
                   <label style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Caja Inicial</label>
@@ -635,7 +1085,6 @@ const AdminDashboard = () => {
             )}
           </div>
 
-          {/* Shifts History Table */}
           <div className="card glass-panel">
             <h3><Clock size={20} /> Historial y Seguimiento de Turnos</h3>
             <table style={{width: '100%', borderCollapse: 'collapse', marginTop: '1rem'}}>
@@ -695,7 +1144,7 @@ const AdminDashboard = () => {
                 })}
                 {shifts.length === 0 && (
                   <tr>
-                    <td colSpan="9" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>
+                    <td colSpan="10" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>
                       No se han registrado turnos aún.
                     </td>
                   </tr>
@@ -706,6 +1155,7 @@ const AdminDashboard = () => {
         </div>
       )}
 
+      {/* --- VENDORS MANAGEMENT TAB --- */}
       {!isLoading && activeTab === 'users' && (
         <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
           <div className="card glass-panel">
@@ -765,10 +1215,11 @@ const AdminDashboard = () => {
         </div>
       )}
 
+      {/* --- LOSSES & ADJUSTMENTS TAB --- */}
       {!isLoading && activeTab === 'losses' && (
         <div className="dashboard-grid" style={{gridTemplateColumns: '2fr 1fr'}}>
           <div className="card glass-panel">
-            <h3>Aprobación de Pérdidas y Robos</h3>
+            <h3>Aprobación de Pérdidas y Robos ({pendingLosses.length})</h3>
             <div className="item-list">
               {pendingLosses.map(loss => (
                 <div key={loss.id} className="list-item" style={{flexDirection: 'column', alignItems: 'flex-start'}}>
@@ -777,7 +1228,9 @@ const AdminDashboard = () => {
                     <span className="badge badge-error">{loss.reason}</span>
                   </div>
                   <div className="flex-between" style={{width: '100%'}}>
-                    <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>Reportado el: {loss.timestamp ? new Date(loss.timestamp.toDate()).toLocaleString() : ''}</p>
+                    <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                      Vendedor: {loss.vendorName || '-'} | Fecha: {formatDate(loss.timestamp)}
+                    </p>
                     <div style={{display: 'flex', gap: '0.5rem'}}>
                       <button className="btn btn-success" onClick={() => handleLoss(loss.id, true)}>Aprobar y Descontar</button>
                       <button className="btn btn-danger" onClick={() => handleLoss(loss.id, false)}>Rechazar</button>
@@ -785,14 +1238,14 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               ))}
-              {pendingLosses.length === 0 && <p>No hay pérdidas pendientes de revisión.</p>}
+              {pendingLosses.length === 0 && <p style={{color: 'var(--text-secondary)', padding: '1rem', textAlign: 'center'}}>No hay pérdidas pendientes de revisión.</p>}
             </div>
           </div>
           
           <div className="card glass-panel">
-            <h3>Motivos de Pérdida</h3>
+            <h3>Motivos de Pérdida Configurados</h3>
             <form onSubmit={addMotivo} style={{display: 'flex', gap: '0.5rem', marginBottom: '1rem'}}>
-              <input type="text" className="input-field" value={newMotivo} onChange={e=>setNewMotivo(e.target.value)} placeholder="Ej: Caducado" required/>
+              <input type="text" className="input-field" value={newMotivo} onChange={e=>setNewMotivo(e.target.value)} placeholder="Ej: Caducado, Vencido..." required/>
               <button type="submit" className="btn btn-primary">+</button>
             </form>
             <div className="item-list">
@@ -802,10 +1255,55 @@ const AdminDashboard = () => {
                   <button className="btn btn-secondary" style={{padding: '0.2rem 0.5rem'}} onClick={() => deleteMotivo(m)}><X size={14}/></button>
                 </div>
               ))}
+              {motivos.length === 0 && <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>No se han registrado motivos aún.</p>}
             </div>
           </div>
         </div>
       )}
+
+      {/* --- SYSTEM LOGS TAB --- */}
+      {!isLoading && activeTab === 'logs' && (
+        <div className="card glass-panel">
+          <div className="flex-between" style={{marginBottom: '1rem'}}>
+            <h3><FileText size={20} /> Historial y Auditoría de Eventos del Sistema</h3>
+            <button className="btn btn-secondary" onClick={() => exportToCSV('logs_sistema.csv', systemLogs.map(l => ({
+              FECHA: formatDate(l.timestamp), TIPO: l.type, USUARIO: l.user, DETALLE: l.detail, MONTO: l.amount
+            })))}>
+              <Download size={16} /> Exportar CSV
+            </button>
+          </div>
+          <table style={{width: '100%', borderCollapse: 'collapse'}}>
+            <thead>
+              <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                <th style={{padding: '0.5rem'}}>Fecha / Hora</th>
+                <th style={{padding: '0.5rem'}}>Evento</th>
+                <th style={{padding: '0.5rem'}}>Usuario</th>
+                <th style={{padding: '0.5rem'}}>Detalle de la Acción</th>
+                <th style={{padding: '0.5rem', textAlign: 'right'}}>Monto (Bs.)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {systemLogs.map(log => (
+                <tr key={log.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                  <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{formatDate(log.timestamp)}</td>
+                  <td style={{padding: '0.5rem'}}>
+                    <span className="badge badge-primary" style={{fontSize: '0.75rem'}}>{log.type}</span>
+                  </td>
+                  <td style={{padding: '0.5rem', fontWeight: '500'}}>{log.user}</td>
+                  <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{log.detail}</td>
+                  <td style={{padding: '0.5rem', textAlign: 'right', fontWeight: 'bold'}}>
+                    {log.amount ? `Bs. ${log.amount.toFixed(2)}` : '-'}
+                  </td>
+                </tr>
+              ))}
+              {systemLogs.length === 0 && (
+                <tr><td colSpan="5" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>No se han registrado eventos en el log del sistema.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
     </div>
   );
 };
