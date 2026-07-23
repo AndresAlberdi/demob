@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
         setCurrentUser(user);
         
         // Special case for the main admin per instructions
-        if (user.email === 'pretsodatabase@gmail.com') {
+        if (user.email === 'pretsodatabase@gmail.com' || user.email === 'admin@demob.com') {
           setUserRole('admin');
         } else {
           // Fetch role from firestore
