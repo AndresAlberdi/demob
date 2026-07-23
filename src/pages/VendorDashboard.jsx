@@ -89,12 +89,19 @@ const VendorDashboard = () => {
     <div className="dashboard-layout">
       <div className="dashboard-header flex-between">
         <div>
-          <h2>Panel de Vendedor</h2>
-          <p>Bienvenido, {currentUser?.email}</p>
+          <h2>Panel de Vendedor (POS)</h2>
+          <p>Usuario: {currentUser?.email}</p>
         </div>
-        <button className="btn btn-secondary" onClick={handleLogout}>
-          <LogOut size={18} /> Salir
-        </button>
+        <div style={{display: 'flex', gap: '1rem'}}>
+          {currentUser && (currentUser.email === 'admin@demob.com' || currentUser.email === 'pretsodatabase@gmail.com') && (
+            <button className="btn btn-primary" onClick={() => navigate('/admin')}>
+              Panel Admin
+            </button>
+          )}
+          <button className="btn btn-secondary" onClick={handleLogout}>
+            <LogOut size={18} /> Salir
+          </button>
+        </div>
       </div>
       
       <div className="tabs">

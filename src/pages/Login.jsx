@@ -18,9 +18,7 @@ const Login = () => {
     
     try {
       await login(email, password);
-      // AuthContext will handle state, the ProtectedRoute redirects properly 
-      // but let's push them to a safe default and let ProtectedRoute sort it out
-      navigate('/vendedor');
+      navigate('/');
     } catch (err) {
       console.error(err);
       setError('Credenciales inválidas. Por favor intente de nuevo.');

@@ -21,11 +21,20 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   return children;
 };
 
+const HomeRedirect = () => {
+  const { currentUser, userRole } = useAuth();
+  if (!currentUser) return <Navigate to="/login" replace />;
+  // If loading role, we might want to wait, but assuming it loads fast enough:
+  if (userRole === 'admin') return <Navigate to="/admin" replace />;
+  return <Navigate to="/vendedor" replace />;
+};
+
 function App() {
   return (
     <AuthProvider>
       <Router>
         <Routes>
+          <Route path="/" element={<HomeRedirect />} />
           <Route path="/login" element={<Login />} />
           <Route 
             path="/vendedor/*" 
@@ -46,7 +55,7 @@ function App() {
           {/* Default redirect */}
           <Route 
             path="*" 
-            element={<Navigate to="/login" replace />} 
+            element={<Navigate to="/" replace />} 
           />
         </Routes>
       </Router>
