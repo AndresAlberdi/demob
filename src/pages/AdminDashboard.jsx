@@ -24,13 +24,25 @@ const AdminDashboard = () => {
   // CSV Form State
   const [csvHasHeader, setCsvHasHeader] = useState(true);
   
-  // Form states
+  // Form & Edit states
   const [newUser, setNewUser] = useState({ name: '', pin: '' });
   const [newMotivo, setNewMotivo] = useState('');
   
-  // Edit states
-  const [editingStock, setEditingStock] = useState(null);
-  const [stockValue, setStockValue] = useState('');
+  // Product Edit States
+  const [editingProduct, setEditingProduct] = useState(null); // product object or null
+  const [editProdForm, setEditProdForm] = useState({ name: '', category: '', price: '', stock: '' });
+  const [newProdForm, setNewProdForm] = useState({ name: '', category: 'CON GAS', price: '', stock: '10' });
+  
+  // Category Move State
+  const [moveFromCategory, setMoveFromCategory] = useState('');
+  const [moveToCategory, setMoveToCategory] = useState('');
+  
+  // Inventory Filter States
+  const [adminSearch, setAdminSearch] = useState('');
+  const [adminCategoryFilter, setAdminCategoryFilter] = useState('todas');
+  const [adminMinPrice, setAdminMinPrice] = useState('');
+  const [adminMaxPrice, setAdminMaxPrice] = useState('');
+  
   const [editingUser, setEditingUser] = useState(null);
   const [editPinValue, setEditPinValue] = useState('');
 
@@ -100,15 +112,80 @@ const AdminDashboard = () => {
     }
   };
 
-  // --- INVENTORY MANAGEMENT ---
-  const saveStock = async (productId) => {
-    if (stockValue === '') return;
+  // --- INVENTORY & PRODUCT MANAGEMENT ---
+  const handleCreateProduct = async (e) => {
+    e.preventDefault();
+    if (!newProdForm.name || !newProdForm.price) return alert("Ingrese el nombre y precio del producto.");
     try {
-      await updateDoc(doc(db, "products", productId), { stock: parseInt(stockValue) });
-      setEditingStock(null);
+      await addDoc(collection(db, "products"), {
+        name: newProdForm.name.trim(),
+        category: newProdForm.category.trim() || 'GENERAL',
+        price: parseFloat(newProdForm.price),
+        stock: parseInt(newProdForm.stock) || 0,
+        isDeleted: false
+      });
+      alert("Producto creado exitosamente");
+      setNewProdForm({ name: '', category: 'CON GAS', price: '', stock: '10' });
       loadData();
     } catch (e) {
-      alert("Error actualizando stock");
+      alert("Error creando producto");
+    }
+  };
+
+  const startEditProduct = (p) => {
+    setEditingProduct(p.id);
+    setEditProdForm({
+      name: p.name,
+      category: p.category,
+      price: p.price,
+      stock: p.stock !== undefined ? p.stock : 0
+    });
+  };
+
+  const saveProductEdit = async (productId) => {
+    try {
+      await updateDoc(doc(db, "products", productId), {
+        name: editProdForm.name.trim(),
+        category: editProdForm.category.trim(),
+        price: parseFloat(editProdForm.price),
+        stock: parseInt(editProdForm.stock)
+      });
+      setEditingProduct(null);
+      loadData();
+    } catch (e) {
+      alert("Error actualizando producto");
+    }
+  };
+
+  const softDeleteProduct = async (productId, productName) => {
+    if (!window.confirm(`¿Quitar/Eliminar el producto "${productName}"? (Se ocultará del inventario y ventas).`)) return;
+    try {
+      await updateDoc(doc(db, "products", productId), { isDeleted: true });
+      loadData();
+    } catch (e) {
+      alert("Error eliminando producto");
+    }
+  };
+
+  const handleBulkMoveCategory = async (e) => {
+    e.preventDefault();
+    if (!moveFromCategory || !moveToCategory) return alert("Seleccione la categoría origen y destino.");
+    if (moveFromCategory === moveToCategory) return alert("Las categorías origen y destino deben ser distintas.");
+    
+    setIsLoading(true);
+    try {
+      const prodsToMove = products.filter(p => p.category === moveFromCategory && !p.isDeleted);
+      for (const p of prodsToMove) {
+        await updateDoc(doc(db, "products", p.id), { category: moveToCategory });
+      }
+      alert(`Se movieron ${prodsToMove.length} productos de "${moveFromCategory}" a "${moveToCategory}".`);
+      setMoveFromCategory('');
+      setMoveToCategory('');
+      loadData();
+    } catch (e) {
+      alert("Error reasignando categorías");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -166,25 +243,19 @@ const AdminDashboard = () => {
     loadData();
   };
 
-  // --- LOSSES APPROVAL ---
-  const handleLoss = async (id, approved) => {
+  // --- SHIFT CONTROL ---
+  const forceCloseShift = async (shiftId, vendorName) => {
+    if (!window.confirm(`¿Forzar el cierre del turno activo de ${vendorName}?`)) return;
     try {
-      const status = approved ? 'approved' : 'rejected';
-      await updateDoc(doc(db, "losses", id), { status });
-      
-      if (approved) {
-        // Deduct stock
-        const lossDoc = pendingLosses.find(l => l.id === id);
-        if (lossDoc) {
-          const p = products.find(prod => prod.id === lossDoc.productId);
-          if (p) {
-            await updateDoc(doc(db, "products", p.id), { stock: (p.stock || 0) - lossDoc.qty });
-          }
-        }
-      }
+      await updateDoc(doc(db, "shifts", shiftId), {
+        status: 'closed',
+        endTime: serverTimestamp(),
+        forceClosedBy: currentUser.email || 'Admin'
+      });
+      alert('Turno cerrado forzosamente.');
       loadData();
     } catch (e) {
-      alert("Error procesando");
+      alert('Error cerrando turno');
     }
   };
 
@@ -297,100 +368,208 @@ const AdminDashboard = () => {
       )}
 
       {!isLoading && activeTab === 'inventory' && (
-        <div className="card glass-panel">
-          <div className="flex-between" style={{marginBottom: '1rem'}}>
-            <h3>Gestión de Inventario y Productos</h3>
-            <div style={{display: 'flex', gap: '1rem', alignItems: 'center'}}>
-              <label style={{fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer'}}>
-                <input 
-                  type="checkbox" 
-                  checked={csvHasHeader} 
-                  onChange={e => setCsvHasHeader(e.target.checked)} 
-                />
-                ¿Tiene fila de títulos/encabezados?
-              </label>
-              <label className="btn btn-primary" style={{cursor: 'pointer'}}>
-                <Upload size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Cargar CSV
-                <input type="file" accept=".csv" style={{display: 'none'}} onChange={handleCSVUpload} />
-              </label>
+        <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+          {/* Top Bar: Actions & CSV Import/Export */}
+          <div className="card glass-panel">
+            <div className="flex-between" style={{marginBottom: '1rem'}}>
+              <h3>Gestión de Inventario y Productos</h3>
+              <div style={{display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap'}}>
+                <label style={{fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer'}}>
+                  <input 
+                    type="checkbox" 
+                    checked={csvHasHeader} 
+                    onChange={e => setCsvHasHeader(e.target.checked)} 
+                  />
+                  ¿Fila de títulos?
+                </label>
+                <label className="btn btn-primary" style={{cursor: 'pointer'}}>
+                  <Upload size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Cargar CSV
+                  <input type="file" accept=".csv" style={{display: 'none'}} onChange={handleCSVUpload} />
+                </label>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => exportToCSV('inventario_completo.csv', products.filter(p => !p.isDeleted).map(p => ({
+                    CATEGORIA: p.category,
+                    PRODUCTO: p.name,
+                    PRECIO: p.price,
+                    STOCK: p.stock
+                  })))}
+                >
+                  <Download size={16} /> Exportar CSV
+                </button>
+              </div>
             </div>
+
+            {/* Filters */}
+            <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem'}}>
+              <input 
+                type="text" 
+                placeholder="Buscar por producto..." 
+                className="input-field" 
+                style={{flex: 1, minWidth: '150px'}}
+                value={adminSearch} 
+                onChange={e=>setAdminSearch(e.target.value)} 
+              />
+              <select className="input-field" style={{width: '180px'}} value={adminCategoryFilter} onChange={e=>setAdminCategoryFilter(e.target.value)}>
+                {['todas', ...Array.from(new Set(products.filter(p=>!p.isDeleted).map(p=>p.category).filter(Boolean)))].map(c => (
+                  <option key={c} value={c}>Categoría: {c.toUpperCase()}</option>
+                ))}
+              </select>
+              <input type="number" placeholder="Min Bs." className="input-field" style={{width: '100px'}} value={adminMinPrice} onChange={e=>setAdminMinPrice(e.target.value)} />
+              <input type="number" placeholder="Max Bs." className="input-field" style={{width: '100px'}} value={adminMaxPrice} onChange={e=>setAdminMaxPrice(e.target.value)} />
+            </div>
+
+            {/* Products Table */}
+            <table style={{width: '100%', borderCollapse: 'collapse'}}>
+              <thead>
+                <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                  <th style={{padding: '0.5rem'}}>Producto (Descripción)</th>
+                  <th style={{padding: '0.5rem'}}>Categoría</th>
+                  <th style={{padding: '0.5rem'}}>Precio (Bs.)</th>
+                  <th style={{padding: '0.5rem'}}>Stock</th>
+                  <th style={{padding: '0.5rem', textAlign: 'center'}}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products
+                  .filter(p => !p.isDeleted)
+                  .filter(p => {
+                    const matchSearch = p.name?.toLowerCase().includes(adminSearch.toLowerCase());
+                    const matchCat = adminCategoryFilter === 'todas' || p.category === adminCategoryFilter;
+                    const price = p.price || 0;
+                    const matchMin = adminMinPrice === '' || price >= parseFloat(adminMinPrice);
+                    const matchMax = adminMaxPrice === '' || price <= parseFloat(adminMaxPrice);
+                    return matchSearch && matchCat && matchMin && matchMax;
+                  })
+                  .map(p => {
+                    const isEditing = editingProduct === p.id;
+                    return (
+                      <tr key={p.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                        <td style={{padding: '0.5rem'}}>
+                          {isEditing ? (
+                            <input 
+                              type="text" 
+                              className="input-field" 
+                              value={editProdForm.name} 
+                              onChange={e => setEditProdForm({...editProdForm, name: e.target.value})} 
+                            />
+                          ) : (
+                            <span style={{fontWeight: '500'}}>{p.name}</span>
+                          )}
+                        </td>
+                        <td style={{padding: '0.5rem'}}>
+                          {isEditing ? (
+                            <input 
+                              type="text" 
+                              className="input-field" 
+                              value={editProdForm.category} 
+                              onChange={e => setEditProdForm({...editProdForm, category: e.target.value})} 
+                            />
+                          ) : (
+                            <span className="badge badge-success">{p.category}</span>
+                          )}
+                        </td>
+                        <td style={{padding: '0.5rem'}}>
+                          {isEditing ? (
+                            <input 
+                              type="number" 
+                              step="0.10"
+                              className="input-field" 
+                              style={{width: '90px'}}
+                              value={editProdForm.price} 
+                              onChange={e => setEditProdForm({...editProdForm, price: e.target.value})} 
+                            />
+                          ) : (
+                            `Bs. ${p.price.toFixed(2)}`
+                          )}
+                        </td>
+                        <td style={{padding: '0.5rem'}}>
+                          {isEditing ? (
+                            <input 
+                              type="number" 
+                              className="input-field" 
+                              style={{width: '80px'}} 
+                              value={editProdForm.stock} 
+                              onChange={e => setEditProdForm({...editProdForm, stock: e.target.value})} 
+                            />
+                          ) : (
+                            <span style={{fontWeight: 'bold', color: p.stock <= 0 ? 'var(--danger)' : 'inherit'}}>{p.stock || 0}</span>
+                          )}
+                        </td>
+                        <td style={{padding: '0.5rem', textAlign: 'center'}}>
+                          {isEditing ? (
+                            <div style={{display: 'flex', gap: '0.5rem', justifyContent: 'center'}}>
+                              <button className="btn btn-success" style={{padding: '0.25rem 0.5rem'}} onClick={() => saveProductEdit(p.id)}><Check size={16}/></button>
+                              <button className="btn btn-secondary" style={{padding: '0.25rem 0.5rem'}} onClick={() => setEditingProduct(null)}><X size={16}/></button>
+                            </div>
+                          ) : (
+                            <div style={{display: 'flex', gap: '0.5rem', justifyContent: 'center'}}>
+                              <button className="btn btn-secondary" style={{padding: '0.25rem 0.5rem'}} onClick={() => startEditProduct(p)}>
+                                Editar
+                              </button>
+                              <button className="btn btn-danger" style={{padding: '0.25rem 0.5rem'}} onClick={() => softDeleteProduct(p.id, p.name)}>
+                                Quitar
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
           </div>
 
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.6)', 
-            padding: '1rem', 
-            borderRadius: '12px', 
-            marginBottom: '1.5rem',
-            border: '1px solid rgba(0,0,0,0.08)'
-          }}>
-            <h4 style={{display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', color: 'var(--primary-color)'}}>
-              <Info size={18} /> Instrucciones y Formato de Carga CSV
-            </h4>
-            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem'}}>
-              El archivo CSV debe tener 4 columnas (o 3 si omiten el stock). Si seleccionó "Tiene fila de títulos", la primera fila será ignorada.
-            </p>
-            <div style={{
-              fontFamily: 'monospace', 
-              background: '#1e293b', 
-              color: '#f8fafc', 
-              padding: '0.75rem 1rem', 
-              borderRadius: '8px', 
-              fontSize: '0.8rem',
-              overflowX: 'auto'
-            }}>
-              <div>CATEGORIA,PRODUCTO,PRECIO,STOCK</div>
-              <div>CON GAS,Coca-Cola 2L,13.50,10</div>
-              <div>PIQUEOS,Papas Fritas,5.00,15</div>
-              <div>SIN GAS,Agua Vital 600ml,5.50,20</div>
+          {/* Form grid: Create Product & Bulk Move Category */}
+          <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 1fr'}}>
+            <div className="card glass-panel">
+              <h3>Nuevo Producto (Manual)</h3>
+              <form onSubmit={handleCreateProduct}>
+                <div className="form-group">
+                  <label>Nombre / Descripción</label>
+                  <input type="text" className="input-field" value={newProdForm.name} onChange={e=>setNewProdForm({...newProdForm, name: e.target.value})} placeholder="Ej: Fanta 2L" required/>
+                </div>
+                <div className="form-group">
+                  <label>Categoría</label>
+                  <input type="text" className="input-field" value={newProdForm.category} onChange={e=>setNewProdForm({...newProdForm, category: e.target.value})} placeholder="Ej: CON GAS, DULCES..." required/>
+                </div>
+                <div style={{display: 'flex', gap: '0.5rem'}}>
+                  <div className="form-group" style={{flex: 1}}>
+                    <label>Precio (Bs.)</label>
+                    <input type="number" step="0.10" className="input-field" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm, price: e.target.value})} required/>
+                  </div>
+                  <div className="form-group" style={{flex: 1}}>
+                    <label>Stock Inicial</label>
+                    <input type="number" className="input-field" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm, stock: e.target.value})} required/>
+                  </div>
+                </div>
+                <button type="submit" className="btn btn-primary btn-block">Guardar Producto</button>
+              </form>
+            </div>
+
+            <div className="card glass-panel">
+              <h3>Reasignar Categoría en Bloque</h3>
+              <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                Transfiere todos los productos de una categoría existente hacia otra nueva o existente.
+              </p>
+              <form onSubmit={handleBulkMoveCategory}>
+                <div className="form-group">
+                  <label>Categoría Origen</label>
+                  <select className="input-field" value={moveFromCategory} onChange={e=>setMoveFromCategory(e.target.value)} required>
+                    <option value="">Seleccione Origen...</option>
+                    {Array.from(new Set(products.filter(p=>!p.isDeleted).map(p=>p.category).filter(Boolean))).map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Categoría Destino (Nombre)</label>
+                  <input type="text" className="input-field" value={moveToCategory} onChange={e=>setMoveToCategory(e.target.value)} placeholder="Ej: BEBIDAS FRÍAS" required/>
+                </div>
+                <button type="submit" className="btn btn-secondary btn-block">Transferir Productos</button>
+              </form>
             </div>
           </div>
-          
-          <table style={{width: '100%', borderCollapse: 'collapse'}}>
-            <thead>
-              <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
-                <th style={{padding: '0.5rem'}}>Producto</th>
-                <th style={{padding: '0.5rem'}}>Categoría</th>
-                <th style={{padding: '0.5rem'}}>Precio (Bs.)</th>
-                <th style={{padding: '0.5rem'}}>Stock Físico</th>
-                <th style={{padding: '0.5rem', textAlign: 'center'}}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map(p => (
-                <tr key={p.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
-                  <td style={{padding: '0.5rem'}}>{p.name}</td>
-                  <td style={{padding: '0.5rem'}}>{p.category}</td>
-                  <td style={{padding: '0.5rem'}}>{p.price.toFixed(2)}</td>
-                  <td style={{padding: '0.5rem'}}>
-                    {editingStock === p.id ? (
-                      <input 
-                        type="number" 
-                        className="input-field" 
-                        style={{width: '80px', padding: '0.25rem'}} 
-                        value={stockValue} 
-                        onChange={e => setStockValue(e.target.value)} 
-                        autoFocus
-                      />
-                    ) : (
-                      <span style={{fontWeight: 'bold', color: p.stock <= 0 ? 'var(--danger)' : 'inherit'}}>{p.stock || 0}</span>
-                    )}
-                  </td>
-                  <td style={{padding: '0.5rem', textAlign: 'center'}}>
-                    {editingStock === p.id ? (
-                      <div style={{display: 'flex', gap: '0.5rem', justifyContent: 'center'}}>
-                        <button className="btn btn-success" style={{padding: '0.25rem 0.5rem'}} onClick={() => saveStock(p.id)}><Check size={16}/></button>
-                        <button className="btn btn-secondary" style={{padding: '0.25rem 0.5rem'}} onClick={() => setEditingStock(null)}><X size={16}/></button>
-                      </div>
-                    ) : (
-                      <button className="btn btn-secondary" style={{padding: '0.25rem 0.5rem'}} onClick={() => {setEditingStock(p.id); setStockValue(p.stock || 0);}}>
-                        Ajustar Stock
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
 
@@ -398,7 +577,18 @@ const AdminDashboard = () => {
         <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
           {/* Active Shift Card */}
           <div className="card glass-panel" style={{borderLeft: '4px solid var(--secondary-color)'}}>
-            <h3><Activity size={20} style={{color: 'var(--secondary-color)'}} /> Turno Activo Actual</h3>
+            <div className="flex-between">
+              <h3><Activity size={20} style={{color: 'var(--secondary-color)'}} /> Turno Activo Actual</h3>
+              {activeShiftDoc && (
+                <button 
+                  className="btn btn-danger"
+                  style={{padding: '0.35rem 0.75rem', fontSize: '0.85rem'}}
+                  onClick={() => forceCloseShift(activeShiftDoc.id, activeShiftDoc.vendorName)}
+                >
+                  Forzar Cierre de Turno
+                </button>
+              )}
+            </div>
             {activeShiftDoc ? (
               <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginTop: '0.5rem'}}>
                 <div>
@@ -452,7 +642,10 @@ const AdminDashboard = () => {
                       <td style={{padding: '0.5rem', fontWeight: 'bold'}}>{sh.vendorName || 'Vendedor'}</td>
                       <td style={{padding: '0.5rem'}}>
                         {isOpen ? (
-                          <span className="badge badge-success">Activo</span>
+                          <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+                            <span className="badge badge-success">Activo</span>
+                            <button className="btn btn-danger" style={{padding: '0.15rem 0.4rem', fontSize: '0.75rem'}} onClick={() => forceCloseShift(sh.id, sh.vendorName)}>Cerrar</button>
+                          </div>
                         ) : (
                           <span className="badge badge-secondary" style={{background: '#e2e8f0', color: '#475569'}}>Cerrado</span>
                         )}

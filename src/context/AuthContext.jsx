@@ -88,7 +88,17 @@ export const AuthProvider = ({ children }) => {
       }
       
       const userDoc = snapshot.docs[0];
-      const userData = { uid: userDoc.id, ...userDoc.data(), isPinUser: true, email: userDoc.data().name };
+      const data = userDoc.data();
+      const userData = { 
+        id: userDoc.id, 
+        uid: userDoc.id, 
+        vendorId: userDoc.id,
+        name: data.name, 
+        email: data.name,
+        role: data.role || 'vendedor',
+        pin: data.pin,
+        isPinUser: true 
+      };
       
       localStorage.setItem('pin_user', JSON.stringify(userData));
       setCurrentUser(userData);

@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { collection, query, getDocs, addDoc, serverTimestamp, where, updateDoc, doc, increment } from 'firebase/firestore';
-import { Search, ShoppingCart, LogOut, Package, CreditCard, Banknote, Coffee, History, AlertTriangle, Send, Clock, ShieldAlert } from 'lucide-react';
+import { Search, ShoppingCart, LogOut, Package, CreditCard, Banknote, Coffee, History, AlertTriangle, Send, Clock, ShieldAlert, Download, Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { exportToCSV } from '../utils/csvExporter';
 
 const VendorDashboard = () => {
   const { logout, currentUser } = useAuth();
@@ -15,11 +16,15 @@ const VendorDashboard = () => {
   const [cart, setCart] = useState([]);
   const [loans, setLoans] = useState([]);
   
-  // UI States
+  // UI & Filter States
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('pos'); // pos, inventory, loans, losses, orders
+  const [categoryFilter, setCategoryFilter] = useState('todas');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [activeTab, setActiveTab] = useState('pos'); // pos, inventory, loans, losses, orders, history
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [shiftOperations, setShiftOperations] = useState([]);
   
   // Shift States
   const [activeShift, setActiveShift] = useState(null);
@@ -91,11 +96,47 @@ const VendorDashboard = () => {
         });
         
         setCurrentCash(cashBalance);
+        // Load shift operations
+        const salesQ = query(collection(db, "sales"), where("shiftId", "==", globalShiftId));
+        const salesS = await getDocs(salesQ);
+        const sList = salesS.docs.map(d => ({ 
+          id: d.id, 
+          opType: 'Venta', 
+          detail: d.data().items?.map(i => `${i.qty}x ${i.name}`).join(', ') || 'Venta',
+          amount: d.data().total,
+          method: d.data().method,
+          time: d.data().timestamp ? new Date(d.data().timestamp.toDate()).toLocaleTimeString() : 'Reciente'
+        }));
+
+        const ordersQ = query(collection(db, "orders"), where("shiftId", "==", globalShiftId));
+        const ordersS = await getDocs(ordersQ);
+        const oList = ordersS.docs.map(d => ({ 
+          id: d.id, 
+          opType: `Gasto (${d.data().type})`, 
+          detail: `${d.data().description} ${d.data().receiptNumber ? `[${d.data().receiptType}: ${d.data().receiptNumber}]` : ''}`,
+          amount: -d.data().amount,
+          method: 'Efectivo',
+          time: d.data().timestamp ? new Date(d.data().timestamp.toDate()).toLocaleTimeString() : 'Reciente'
+        }));
+
+        const lossesQ = query(collection(db, "losses"), where("shiftId", "==", globalShiftId));
+        const lossesS = await getDocs(lossesQ);
+        const lList = lossesS.docs.map(d => ({ 
+          id: d.id, 
+          opType: 'Reporte Pérdida', 
+          detail: `${d.data().qty}x ${d.data().productName} (${d.data().reason})`,
+          amount: 0,
+          method: '-',
+          time: d.data().timestamp ? new Date(d.data().timestamp.toDate()).toLocaleTimeString() : 'Reciente'
+        }));
+
+        setShiftOperations([...sList, ...oList, ...lList]);
       } else {
         setActiveShift(null);
         setIsReadOnly(false);
         setActiveShiftVendor('');
         setCurrentCash(0);
+        setShiftOperations([]);
       }
 
       // Load pending loans
@@ -340,11 +381,34 @@ const VendorDashboard = () => {
   };
 
   // --- RENDER HELPERS ---
-  const filteredProducts = products.filter(p => 
-    p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.category?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  
+  const categoriesList = ['todas', ...Array.from(new Set(products.filter(p => !p.isDeleted).map(p => p.category).filter(Boolean)))];
+
+  const posProducts = products.filter(p => {
+    if (p.isDeleted) return false;
+    if ((p.stock !== undefined ? p.stock : 0) <= 0) return false; // HIDE zero stock & deleted in POS!
+    
+    const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          p.category?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCat = categoryFilter === 'todas' || p.category === categoryFilter;
+    const price = p.price || 0;
+    const matchesMin = minPrice === '' || price >= parseFloat(minPrice);
+    const matchesMax = maxPrice === '' || price <= parseFloat(maxPrice);
+
+    return matchesSearch && matchesCat && matchesMin && matchesMax;
+  });
+
+  const filteredInventoryProducts = products.filter(p => {
+    if (p.isDeleted) return false;
+    const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          p.category?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCat = categoryFilter === 'todas' || p.category === categoryFilter;
+    const price = p.price || 0;
+    const matchesMin = minPrice === '' || price >= parseFloat(minPrice);
+    const matchesMax = maxPrice === '' || price <= parseFloat(maxPrice);
+
+    return matchesSearch && matchesCat && matchesMin && matchesMax;
+  });
+
   const cartTotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
 
   if (isLoading) return <div className="flex-center" style={{height: '100vh'}}><Coffee className="spinner" size={48} /></div>;
@@ -426,6 +490,7 @@ const VendorDashboard = () => {
           <div className="tabs">
             <div className={`tab ${activeTab === 'pos' ? 'active' : ''}`} onClick={() => setActiveTab('pos')}>Ventas (POS)</div>
             <div className={`tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>Inventario</div>
+            <div className={`tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>Historial Turno</div>
             <div className={`tab ${activeTab === 'loans' ? 'active' : ''}`} onClick={() => setActiveTab('loans')}>Préstamos</div>
             <div className={`tab ${activeTab === 'losses' ? 'active' : ''}`} onClick={() => setActiveTab('losses')}>Pérdidas</div>
             <div className={`tab ${activeTab === 'orders' ? 'active' : ''}`} onClick={() => setActiveTab('orders')}>Compras/Pedidos</div>
@@ -437,21 +502,53 @@ const VendorDashboard = () => {
           {activeTab === 'pos' && (
             <div className="dashboard-grid" style={{gridTemplateColumns: '2fr 1fr'}}>
               <div className="card glass-panel">
-                <h3><Coffee size={20} /> Productos</h3>
-                <div className="search-bar">
-                  <Search className="search-icon" size={18} />
-                  <input 
-                    type="text" 
-                    placeholder="Buscar por nombre o tipo..." 
-                    className="input-field"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+                <h3><Coffee size={20} /> Productos Disponibles</h3>
+                <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem'}}>
+                  <div className="search-bar" style={{marginBottom: 0}}>
+                    <Search className="search-icon" size={18} />
+                    <input 
+                      type="text" 
+                      placeholder="Buscar por nombre..." 
+                      className="input-field"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Category & Price filters */}
+                  <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center'}}>
+                    <select 
+                      className="input-field" 
+                      style={{flex: 1, minWidth: '130px'}}
+                      value={categoryFilter} 
+                      onChange={e => setCategoryFilter(e.target.value)}
+                    >
+                      {categoriesList.map(c => (
+                        <option key={c} value={c}>Tipo: {c.toUpperCase()}</option>
+                      ))}
+                    </select>
+
+                    <input 
+                      type="number" 
+                      placeholder="Min Bs." 
+                      className="input-field" 
+                      style={{width: '90px'}} 
+                      value={minPrice} 
+                      onChange={e => setMinPrice(e.target.value)} 
+                    />
+                    <input 
+                      type="number" 
+                      placeholder="Max Bs." 
+                      className="input-field" 
+                      style={{width: '90px'}} 
+                      value={maxPrice} 
+                      onChange={e => setMaxPrice(e.target.value)} 
+                    />
+                  </div>
                 </div>
                 
                 <div className="item-list" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '1rem', maxHeight: '500px', overflowY: 'auto', padding: '0.5rem'}}>
-                  {filteredProducts.map(p => {
-                    const isOutOfStock = (p.stock !== undefined ? p.stock : 0) <= 0;
+                  {posProducts.map(p => {
                     return (
                       <div 
                         key={p.id} 
@@ -459,26 +556,26 @@ const VendorDashboard = () => {
                         style={{
                           flexDirection: 'column', 
                           alignItems: 'center', 
-                          cursor: isOutOfStock || isReadOnly ? 'not-allowed' : 'pointer', 
+                          cursor: isReadOnly ? 'not-allowed' : 'pointer', 
                           textAlign: 'center', 
-                          padding: '1rem',
-                          opacity: isOutOfStock ? 0.6 : 1
+                          padding: '1rem'
                         }} 
-                        onClick={() => !isOutOfStock && !isReadOnly && addToCart(p)}
+                        onClick={() => !isReadOnly && addToCart(p)}
                       >
                         <div style={{display: 'flex', gap: '0.25rem', marginBottom: '0.5rem', flexWrap: 'wrap', justifyContent: 'center'}}>
                           <span className="badge badge-success" style={{fontSize: '0.7rem'}}>{p.category}</span>
-                          {isOutOfStock ? (
-                            <span className="badge" style={{fontSize: '0.7rem', background: '#fee2e2', color: '#dc2626'}}>Sin Stock</span>
-                          ) : (
-                            <span className="badge" style={{fontSize: '0.7rem', background: '#e0f2fe', color: '#0369a1'}}>Stock: {p.stock}</span>
-                          )}
+                          <span className="badge" style={{fontSize: '0.7rem', background: '#e0f2fe', color: '#0369a1'}}>Stock: {p.stock}</span>
                         </div>
                         <h4 style={{marginBottom: '0.5rem', fontSize: '0.9rem'}}>{p.name}</h4>
                         <span className="item-action" style={{fontSize: '1.1rem'}}>Bs. {p.price.toFixed(2)}</span>
                       </div>
                     );
                   })}
+                  {posProducts.length === 0 && (
+                    <div style={{gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem'}}>
+                      No hay productos disponibles con estos filtros o sin stock.
+                    </div>
+                  )}
                 </div>
               </div>
               
@@ -536,10 +633,36 @@ const VendorDashboard = () => {
 
           {activeTab === 'inventory' && (
             <div className="card glass-panel">
-              <h3><Package size={20} /> Inventario Actual</h3>
-              <p style={{marginBottom: '1rem'}}>Vista de existencias. Solo el administrador puede editar cantidades.</p>
+              <div className="flex-between" style={{marginBottom: '1rem'}}>
+                <h3><Package size={20} /> Inventario Actual</h3>
+                <button className="btn btn-secondary" onClick={() => exportToCSV('inventario_vendedor.csv', filteredInventoryProducts.map(p => ({
+                  CATEGORIA: p.category,
+                  PRODUCTO: p.name,
+                  PRECIO: p.price,
+                  STOCK: p.stock
+                })))}>
+                  <Download size={16} /> Exportar CSV
+                </button>
+              </div>
+
+              {/* Inventory Filters */}
+              <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem'}}>
+                <input 
+                  type="text" 
+                  placeholder="Buscar producto..." 
+                  className="input-field" 
+                  style={{flex: 1, minWidth: '150px'}}
+                  value={searchTerm} 
+                  onChange={e=>setSearchTerm(e.target.value)} 
+                />
+                <select className="input-field" style={{width: '180px'}} value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
+                  {categoriesList.map(c => <option key={c} value={c}>Tipo: {c.toUpperCase()}</option>)}
+                </select>
+                <input type="number" placeholder="Min Bs." className="input-field" style={{width: '100px'}} value={minPrice} onChange={e=>setMinPrice(e.target.value)} />
+                <input type="number" placeholder="Max Bs." className="input-field" style={{width: '100px'}} value={maxPrice} onChange={e=>setMaxPrice(e.target.value)} />
+              </div>
               
-              <table style={{width: '100%', borderCollapse: 'collapse', marginTop: '1rem'}}>
+              <table style={{width: '100%', borderCollapse: 'collapse'}}>
                 <thead>
                   <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
                     <th style={{padding: '0.5rem'}}>Producto</th>
@@ -549,7 +672,7 @@ const VendorDashboard = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map(p => (
+                  {filteredInventoryProducts.map(p => (
                     <tr key={p.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
                       <td style={{padding: '0.5rem'}}>{p.name}</td>
                       <td style={{padding: '0.5rem'}}>{p.category}</td>
@@ -557,6 +680,60 @@ const VendorDashboard = () => {
                       <td style={{padding: '0.5rem', textAlign: 'right', fontWeight: 'bold', color: p.stock <= 0 ? 'var(--danger)' : 'inherit'}}>{p.stock || 0}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {activeTab === 'history' && (
+            <div className="card glass-panel">
+              <div className="flex-between" style={{marginBottom: '1rem'}}>
+                <h3><History size={20} /> Historial de Operaciones del Turno</h3>
+                <button className="btn btn-secondary" onClick={() => exportToCSV('operaciones_turno.csv', shiftOperations.map(o => ({
+                  HORA: o.time,
+                  TIPO: o.opType,
+                  DETALLE: o.detail,
+                  METODO: o.method,
+                  MONTO_BS: o.amount
+                })))}>
+                  <Download size={16} /> Exportar CSV
+                </button>
+              </div>
+              
+              <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead>
+                  <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                    <th style={{padding: '0.5rem'}}>Hora</th>
+                    <th style={{padding: '0.5rem'}}>Operación</th>
+                    <th style={{padding: '0.5rem'}}>Detalle</th>
+                    <th style={{padding: '0.5rem'}}>Método</th>
+                    <th style={{padding: '0.5rem', textAlign: 'right'}}>Monto (Bs.)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shiftOperations.map(op => (
+                    <tr key={op.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{op.time}</td>
+                      <td style={{padding: '0.5rem', fontWeight: 'bold'}}>{op.opType}</td>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{op.detail}</td>
+                      <td style={{padding: '0.5rem'}}>{op.method}</td>
+                      <td style={{
+                        padding: '0.5rem', 
+                        textAlign: 'right', 
+                        fontWeight: 'bold',
+                        color: op.amount > 0 ? 'var(--secondary-color)' : (op.amount < 0 ? 'var(--danger)' : 'inherit')
+                      }}>
+                        {op.amount !== 0 ? `Bs. ${op.amount.toFixed(2)}` : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                  {shiftOperations.length === 0 && (
+                    <tr>
+                      <td colSpan="5" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>
+                        No hay operaciones en este turno aún.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

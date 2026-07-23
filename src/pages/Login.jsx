@@ -69,26 +69,26 @@ const Login = () => {
         {error && <div className="error-message">{error}</div>}
         
         {loginMethod === 'email' ? (
-          <form onSubmit={handleEmailSubmit}>
+          <form onSubmit={handleEmailSubmit} method="post" action="#">
             <div className="form-group">
-              <label>Correo Electrónico</label>
+              <label htmlFor="admin-username">Correo Electrónico</label>
               <input 
-                id="email"
-                name="email"
+                id="admin-username"
+                name="username"
                 type="email" 
                 className="input-field" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@demob.com"
-                autoComplete="email"
+                autoComplete="username"
                 required
               />
             </div>
             
             <div className="form-group">
-              <label>Contraseña</label>
+              <label htmlFor="admin-password">Contraseña</label>
               <input 
-                id="password"
+                id="admin-password"
                 name="password"
                 type="password" 
                 className="input-field" 
