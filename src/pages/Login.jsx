@@ -118,7 +118,7 @@ const Login = () => {
                 placeholder="••••"
                 maxLength="4"
                 required
-                style={{textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.5rem'}}
+                style={{textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.25rem'}}
               />
             </div>
             

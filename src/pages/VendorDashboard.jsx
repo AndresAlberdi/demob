@@ -29,7 +29,8 @@ const VendorDashboard = () => {
   // Forms States
   const [loanForm, setLoanForm] = useState({ name: '' });
   const [lossForm, setLossForm] = useState({ reason: '', productId: '', qty: 1 });
-  const [orderForm, setOrderForm] = useState({ type: 'pedido', description: '', amount: '', receipt: false });
+  const [orderForm, setOrderForm] = useState({ type: 'pedido', description: '', amount: '', receiptType: 'ninguno', receiptNumber: '' });
+  const [currentCash, setCurrentCash] = useState(0);
 
   useEffect(() => {
     if (currentUser) {
@@ -56,7 +57,25 @@ const VendorDashboard = () => {
       const sQuery = query(collection(db, "shifts"), where("vendorId", "==", currentUser.uid), where("status", "==", "open"));
       const sSnapshot = await getDocs(sQuery);
       if (!sSnapshot.empty) {
-        setActiveShift({ id: sSnapshot.docs[0].id, ...sSnapshot.docs[0].data() });
+        const shiftData = sSnapshot.docs[0].data();
+        const currentShiftId = sSnapshot.docs[0].id;
+        setActiveShift({ id: currentShiftId, ...shiftData });
+        
+        let cashBalance = shiftData.startCash;
+        
+        const salesQuery = query(collection(db, "sales"), where("shiftId", "==", currentShiftId));
+        const salesSnap = await getDocs(salesQuery);
+        salesSnap.forEach(d => {
+          if (d.data().method === 'Efectivo') cashBalance += d.data().total;
+        });
+        
+        const ordersQuery = query(collection(db, "orders"), where("shiftId", "==", currentShiftId));
+        const ordersSnap = await getDocs(ordersQuery);
+        ordersSnap.forEach(d => {
+          cashBalance -= d.data().amount;
+        });
+        
+        setCurrentCash(cashBalance);
       }
 
       // Load pending loans
@@ -275,13 +294,15 @@ const VendorDashboard = () => {
         type: orderForm.type, // 'pedido' o 'compra'
         description: orderForm.description,
         amount: parseFloat(orderForm.amount),
-        hasReceipt: orderForm.receipt,
+        receiptType: orderForm.receiptType,
+        receiptNumber: orderForm.receiptNumber,
         vendorId: currentUser.uid,
         shiftId: activeShift.id,
         timestamp: serverTimestamp()
       });
       alert('Registro guardado exitosamente');
-      setOrderForm({ type: 'pedido', description: '', amount: '', receipt: false });
+      setOrderForm({ type: 'pedido', description: '', amount: '', receiptType: 'ninguno', receiptNumber: '' });
+      loadInitialData(); // update cash balance
     } catch(e) {
       alert('Error registrando orden');
     } finally {
@@ -305,6 +326,7 @@ const VendorDashboard = () => {
         <div>
           <h2>Panel de Vendedor (POS)</h2>
           <p>Usuario: {currentUser?.email || currentUser?.name}</p>
+          {activeShift && <p style={{color: 'var(--primary-color)', fontWeight: '600'}}>Caja Actual: Bs. {currentCash.toFixed(2)}</p>}
         </div>
         <div style={{display: 'flex', gap: '1rem'}}>
           {currentUser && (currentUser.email === 'admin@demob.com' || currentUser.email === 'pretsodatabase@gmail.com') && (
@@ -540,10 +562,20 @@ const VendorDashboard = () => {
                   <label>Monto (Bs.)</label>
                   <input type="number" step="0.10" className="input-field" value={orderForm.amount} onChange={e=>setOrderForm({...orderForm, amount: e.target.value})} required/>
                 </div>
-                <div className="form-group" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-                  <input type="checkbox" id="receipt" checked={orderForm.receipt} onChange={e=>setOrderForm({...orderForm, receipt: e.target.checked})} />
-                  <label htmlFor="receipt" style={{margin: 0}}>¿Tiene Factura o Recibo?</label>
+                <div className="form-group">
+                  <label>Tipo de Comprobante</label>
+                  <select className="input-field" value={orderForm.receiptType} onChange={e=>setOrderForm({...orderForm, receiptType: e.target.value})} required>
+                    <option value="ninguno">Ninguno</option>
+                    <option value="factura">Factura</option>
+                    <option value="recibo">Recibo</option>
+                  </select>
                 </div>
+                {orderForm.receiptType !== 'ninguno' && (
+                  <div className="form-group">
+                    <label>Número de {orderForm.receiptType === 'factura' ? 'Factura' : 'Recibo'}</label>
+                    <input type="text" className="input-field" value={orderForm.receiptNumber} onChange={e=>setOrderForm({...orderForm, receiptNumber: e.target.value})} required/>
+                  </div>
+                )}
                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>Registrar Gasto</button>
               </form>
             </div>

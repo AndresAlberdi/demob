@@ -26,6 +26,8 @@ const AdminDashboard = () => {
   // Edit states
   const [editingStock, setEditingStock] = useState(null);
   const [stockValue, setStockValue] = useState('');
+  const [editingUser, setEditingUser] = useState(null);
+  const [editPinValue, setEditPinValue] = useState('');
 
   useEffect(() => {
     loadData();
@@ -118,6 +120,17 @@ const AdminDashboard = () => {
     if(!window.confirm("¿Eliminar usuario?")) return;
     await deleteDoc(doc(db, "app_users", id));
     loadData();
+  };
+
+  const updatePin = async (id) => {
+    if (editPinValue.length !== 4) return alert("El PIN debe tener 4 dígitos");
+    try {
+      await updateDoc(doc(db, "app_users", id), { pin: editPinValue });
+      setEditingUser(null);
+      loadData();
+    } catch (e) {
+      alert("Error cambiando PIN");
+    }
   };
 
   // --- MOTIVOS MANAGEMENT ---
@@ -326,9 +339,33 @@ const AdminDashboard = () => {
                 <div key={u.id} className="list-item">
                   <div className="item-info">
                     <h4>{u.name}</h4>
-                    <p>PIN: {u.pin}</p>
+                    {editingUser === u.id ? (
+                      <input 
+                        type="text" 
+                        maxLength="4"
+                        className="input-field"
+                        style={{width: '80px', padding: '0.25rem', marginTop: '0.25rem'}}
+                        value={editPinValue}
+                        onChange={(e) => setEditPinValue(e.target.value)}
+                        placeholder="PIN"
+                      />
+                    ) : (
+                      <p>PIN: {u.pin}</p>
+                    )}
                   </div>
-                  <button className="btn btn-danger" onClick={() => deleteUser(u.id)}>Eliminar</button>
+                  <div style={{display: 'flex', gap: '0.5rem'}}>
+                    {editingUser === u.id ? (
+                      <>
+                        <button className="btn btn-success" onClick={() => updatePin(u.id)}><Check size={16}/></button>
+                        <button className="btn btn-secondary" onClick={() => setEditingUser(null)}><X size={16}/></button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="btn btn-secondary" onClick={() => {setEditingUser(u.id); setEditPinValue(u.pin);}}>Cambiar PIN</button>
+                        <button className="btn btn-danger" onClick={() => deleteUser(u.id)}>Eliminar</button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
               {appUsers.length === 0 && <p>No hay vendedores registrados.</p>}
