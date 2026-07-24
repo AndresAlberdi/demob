@@ -86,73 +86,85 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentUser]);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      // Load products
-      const pSnap = await getDocs(query(collection(db, "products")));
-      const loadedProds = pSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
-      setProducts(loadedProds);
-      
-      // Extract categories dynamically
-      const catSnap = await getDoc(doc(db, "settings", "categories"));
+      const [
+        pSnap, catSnap, uSnap, mSnap, lSnap, sSnap, shSnap, oSnap, loanSnap, extraSnap, logSnap
+      ] = await Promise.allSettled([
+        getDocs(query(collection(db, "products"))),
+        getDoc(doc(db, "settings", "categories")),
+        getDocs(query(collection(db, "app_users"))),
+        getDoc(doc(db, "settings", "motivos")),
+        getDocs(query(collection(db, "losses"))),
+        getDocs(query(collection(db, "sales"))),
+        getDocs(query(collection(db, "shifts"))),
+        getDocs(query(collection(db, "orders"))),
+        getDocs(query(collection(db, "loans"))),
+        getDocs(query(collection(db, "extra_incomes"))),
+        getDocs(query(collection(db, "system_logs")))
+      ]);
+
+      let loadedProds = [];
+      if (pSnap.status === 'fulfilled') {
+        loadedProds = pSnap.value.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+        setProducts(loadedProds);
+      }
+
       let dbCats = [];
-      if (catSnap.exists()) {
-        dbCats = catSnap.data().list || [];
+      if (catSnap.status === 'fulfilled' && catSnap.value.exists()) {
+        dbCats = catSnap.value.data().list || [];
       }
       const prodCats = Array.from(new Set(loadedProds.filter(p => !p.isDeleted).map(p => p.category).filter(Boolean)));
       const fullCats = Array.from(new Set([...dbCats, ...prodCats]));
       setCategories(fullCats);
 
-      // Set default dropdown category if available
       if (fullCats.length > 0 && !fullCats.includes(newProdForm.category)) {
         setNewProdForm(prev => ({ ...prev, category: fullCats[0] }));
       }
 
-      // Load users
-      const uSnap = await getDocs(query(collection(db, "app_users")));
-      setAppUsers(uSnap.docs.map(d => ({id: d.id, ...d.data()})));
-      
-      // Load motivos
-      const mSnap = await getDoc(doc(db, "settings", "motivos"));
-      if (mSnap.exists()) {
-        setMotivos(mSnap.data().list || []);
+      if (uSnap.status === 'fulfilled') {
+        setAppUsers(uSnap.value.docs.map(d => ({id: d.id, ...d.data()})));
       }
       
-      // Load losses
-      const lSnap = await getDocs(query(collection(db, "losses")));
-      const lList = lSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-      setAllLosses(lList);
-      setPendingLosses(lList.filter(l => l.status === 'pending'));
+      if (mSnap.status === 'fulfilled' && mSnap.value.exists()) {
+        setMotivos(mSnap.value.data().list || []);
+      }
       
-      // Load sales
-      const sSnap = await getDocs(query(collection(db, "sales")));
-      setSales(sSnap.docs.map(d => ({id: d.id, ...d.data()})));
+      if (lSnap.status === 'fulfilled') {
+        const lList = lSnap.value.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+        setAllLosses(lList);
+        setPendingLosses(lList.filter(l => l.status === 'pending'));
+      }
       
-      // Load shifts (sorted newest first)
-      const shSnap = await getDocs(query(collection(db, "shifts")));
-      setShifts(shSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.startTime?.seconds || 0) - (a.startTime?.seconds || 0)));
+      if (sSnap.status === 'fulfilled') {
+        setSales(sSnap.value.docs.map(d => ({id: d.id, ...d.data()})));
+      }
       
-      // Load orders
-      const oSnap = await getDocs(query(collection(db, "orders")));
-      setOrders(oSnap.docs.map(d => ({id: d.id, ...d.data()})));
+      if (shSnap.status === 'fulfilled') {
+        setShifts(shSnap.value.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.startTime?.seconds || 0) - (a.startTime?.seconds || 0)));
+      }
+      
+      if (oSnap.status === 'fulfilled') {
+        setOrders(oSnap.value.docs.map(d => ({id: d.id, ...d.data()})));
+      }
 
-      // Load loans
-      const loanSnap = await getDocs(query(collection(db, "loans")));
-      setLoans(loanSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+      if (loanSnap.status === 'fulfilled') {
+        setLoans(loanSnap.value.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+      }
 
-      // Load extra incomes
-      const extraSnap = await getDocs(query(collection(db, "extra_incomes")));
-      setExtraIncomes(extraSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+      if (extraSnap.status === 'fulfilled') {
+        setExtraIncomes(extraSnap.value.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+      }
 
-      // Load system logs
-      const logSnap = await getDocs(query(collection(db, "system_logs")));
-      setSystemLogs(logSnap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
-      
+      if (logSnap.status === 'fulfilled') {
+        setSystemLogs(logSnap.value.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+      }
+
     } catch (e) {
-      console.error("Error loading data:", e);
+      console.error("Error loading Admin data:", e);
     } finally {
       setIsLoading(false);
     }

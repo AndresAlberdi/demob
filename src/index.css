@@ -252,6 +252,19 @@ body {
   gap: 1.5rem;
 }
 
+.pos-dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .pos-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Card Components */
 .card {
   padding: 1.5rem;
