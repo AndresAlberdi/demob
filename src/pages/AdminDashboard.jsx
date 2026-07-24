@@ -533,25 +533,58 @@ const AdminDashboard = () => {
   const { periodSales, periodOrders, periodLoans, periodLosses, periodExtraIncomes } = getFilteredByPeriod();
 
   // Metrics based on period
-  const pCashSales = periodSales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
-  const pQRSales = periodSales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
-  const pPurchases = periodOrders.reduce((acc, o) => acc + o.amount, 0);
-  const pLoanRepayments = periodLoans.filter(l => l.status === 'repaid').reduce((acc, l) => acc + l.amount, 0);
+  const pCashSales = periodSales.reduce((acc, s) => {
+    if (s.method === 'Efectivo') return acc + (parseFloat(s.total) || 0);
+    if (s.method === 'MIXTO') return acc + (parseFloat(s.cashPaid) || 0);
+    return acc;
+  }, 0);
+
+  const pQRSales = periodSales.reduce((acc, s) => {
+    if (s.method === 'QR') return acc + (parseFloat(s.total) || 0);
+    if (s.method === 'MIXTO') return acc + (parseFloat(s.qrPaid) || ((parseFloat(s.total)||0) - (parseFloat(s.cashPaid)||0)));
+    return acc;
+  }, 0);
+
+  const pPurchases = periodOrders.reduce((acc, o) => acc + (parseFloat(o.amount) || 0), 0);
   
-  const pExtraCash = periodExtraIncomes.filter(i => i.method === 'Efectivo').reduce((acc, i) => acc + i.amount, 0);
-  const pExtraQR = periodExtraIncomes.filter(i => i.method === 'QR').reduce((acc, i) => acc + i.amount, 0);
-  
+  const pLoanRepaymentsCash = periodLoans.filter(l => l.status === 'repaid').reduce((acc, l) => {
+    if (l.method === 'QR') return acc;
+    if (l.method === 'MIXTO') return acc + (parseFloat(l.cashPaid) || 0);
+    return acc + (l.cashPaid !== undefined ? parseFloat(l.cashPaid) : (parseFloat(l.amount) || 0));
+  }, 0);
+
+  const pLoanRepaymentsQR = periodLoans.filter(l => l.status === 'repaid').reduce((acc, l) => {
+    if (l.method === 'QR') return acc + (parseFloat(l.amount) || 0);
+    if (l.method === 'MIXTO') return acc + (parseFloat(l.qrPaid) || 0);
+    return acc;
+  }, 0);
+
+  const pLoanRepayments = pLoanRepaymentsCash + pLoanRepaymentsQR;
+
+  const pExtraCash = periodExtraIncomes.filter(i => i.method === 'Efectivo').reduce((acc, i) => acc + (parseFloat(i.amount) || 0), 0);
+  const pExtraQR = periodExtraIncomes.filter(i => i.method === 'QR').reduce((acc, i) => acc + (parseFloat(i.amount) || 0), 0);
+
   const pTotalIncome = pCashSales + pQRSales + pLoanRepayments + pExtraCash + pExtraQR;
   const pTotalExpenses = pPurchases;
-  const pCashBalance = pCashSales + pLoanRepayments + pExtraCash - pPurchases;
+  
+  // Initial cash of shifts opened in this period
+  const pInitialCash = shifts.filter(s => checkTs(s.startTime || s.timestamp)).reduce((acc, s) => acc + (parseFloat(s.startCash) || 0), 0);
+
+  // SALDO ACUMULADO EN CAJA REAL (NUNCA NEGATIVO)
+  const rawCashBalance = pInitialCash + pCashSales + pLoanRepaymentsCash + pExtraCash - pPurchases;
+  const pCashBalance = Math.max(0, rawCashBalance);
 
   // Active shift calculations
   const activeShiftDoc = shifts.find(s => s.status === 'open');
   let activeShiftCash = 0;
   if (activeShiftDoc) {
-    const shiftSales = sales.filter(s => s.shiftId === activeShiftDoc.id && s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
-    const shiftExpenses = orders.filter(o => o.shiftId === activeShiftDoc.id).reduce((acc, o) => acc + o.amount, 0);
-    activeShiftCash = (activeShiftDoc.startCash || 0) + shiftSales - shiftExpenses;
+    const shiftSalesCash = sales.filter(s => s.shiftId === activeShiftDoc.id).reduce((acc, s) => {
+      if (s.method === 'Efectivo') return acc + (parseFloat(s.total) || 0);
+      if (s.method === 'MIXTO') return acc + (parseFloat(s.cashPaid) || 0);
+      return acc;
+    }, 0);
+    const shiftExpenses = orders.filter(o => o.shiftId === activeShiftDoc.id).reduce((acc, o) => acc + (parseFloat(o.amount) || 0), 0);
+    activeShiftCash = Math.max(0, (parseFloat(activeShiftDoc.startCash) || 0) + shiftSalesCash - shiftExpenses);
   }
 
   return (
