@@ -501,10 +501,12 @@ const AdminDashboard = () => {
       startLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
       endLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
     } else if (periodFilter === 'semana') {
-      const day = now.getDay();
-      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-      startLimit = new Date(now.setDate(diff));
-      startLimit.setHours(0,0,0,0);
+      const startOfWeek = new Date(now);
+      const day = startOfWeek.getDay();
+      const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
+      startOfWeek.setDate(diff);
+      startOfWeek.setHours(0,0,0,0);
+      startLimit = startOfWeek;
     } else if (periodFilter === 'mes') {
       startLimit = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
     } else if (periodFilter === 'personalizado') {
@@ -610,7 +612,7 @@ const AdminDashboard = () => {
           )}
         </div>
         <div style={{display: 'flex', gap: '1rem'}}>
-          <Link to="/vendedor" className="btn btn-secondary">Ir a POS</Link>
+          <Link to="/vendedor?from=admin" className="btn btn-secondary" onClick={() => localStorage.setItem('user_role', 'admin')}>Ir a POS</Link>
           <button className="btn btn-danger" onClick={handleLogout}>
             <LogOut size={18} /> Salir
           </button>

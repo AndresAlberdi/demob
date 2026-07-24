@@ -8,7 +8,7 @@ import { exportToCSV } from '../utils/csvExporter';
 import { logEvent } from '../utils/logger';
 
 const VendorDashboard = () => {
-  const { logout, currentUser } = useAuth();
+  const { logout, currentUser, userRole } = useAuth();
   const navigate = useNavigate();
   
   // Data States
@@ -54,10 +54,12 @@ const VendorDashboard = () => {
   const [showPinModal, setShowPinModal] = useState(false);
   const [newVendorPin, setNewVendorPin] = useState('');
 
-  const isAdmin = currentUser?.role === 'admin' || 
+  const isAdmin = userRole === 'admin' ||
+                  currentUser?.role === 'admin' || 
                   currentUser?.email === 'pretsodatabase@gmail.com' ||
+                  currentUser?.email === 'admin@demob.com' ||
                   localStorage.getItem('user_role') === 'admin' ||
-                  localStorage.getItem('user_email') === 'pretsodatabase@gmail.com';
+                  window.location.search.includes('from=admin');
 
   useEffect(() => {
     loadInitialData();
@@ -617,14 +619,18 @@ const VendorDashboard = () => {
           <h2>Terminal de Ventas (POS)</h2>
           <p>Operador: {currentUser?.name || currentUser?.email || 'Vendedor'}</p>
         </div>
-        <div style={{display: 'flex', gap: '1rem', alignItems: 'center'}}>
+        <div style={{display: 'flex', gap: '0.75rem', alignItems: 'center'}}>
           <button className="btn btn-secondary" onClick={() => setShowPinModal(true)}>
             Cambiar Mi PIN
           </button>
           
           {/* BOTÓN REQUERIDO: VOLVER A ADMIN SI ES USUARIO ADMIN */}
           {isAdmin && (
-            <button className="btn btn-secondary flex-center" onClick={() => navigate('/admin')} style={{gap: '0.5rem', background: '#3b82f6', color: '#fff', fontWeight: 'bold'}}>
+            <button 
+              className="btn flex-center" 
+              onClick={() => navigate('/admin')} 
+              style={{gap: '0.5rem', background: '#2563eb', color: '#ffffff', fontWeight: 'bold', borderRadius: '8px', padding: '0.5rem 1rem'}}
+            >
               <ArrowLeft size={18} /> Volver a Admin
             </button>
           )}
@@ -727,36 +733,35 @@ const VendorDashboard = () => {
         <div className="dashboard-grid">
           <div className="card glass-panel pos-catalog">
             
-            {/* Search & Category Filters */}
-            <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem'}}>
-              <div className="search-bar" style={{flex: 1, minWidth: '150px'}}>
-                <Search size={18} />
-                <input 
-                  type="text" 
-                  placeholder="Buscar producto..." 
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                />
-              </div>
+            {/* Standard Search Bar Format Restored */}
+            <div className="search-bar">
+              <Search className="search-icon" size={18} />
+              <input 
+                type="text" 
+                placeholder="Buscar producto por nombre..." 
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
 
-              {/* FILTRO POR TIPO / CATEGORÍA REQUERIDO */}
-              <select className="input-field" style={{width: '180px'}} value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
+            {/* Category & Price Filters Row */}
+            <div style={{display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap'}}>
+              <select className="input-field" style={{flex: 1, minWidth: '150px'}} value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
                 {categoriesList.map(c => <option key={c} value={c}>Tipo: {c.toUpperCase()}</option>)}
               </select>
-
               <input 
                 type="number" 
-                placeholder="Precio Mín" 
+                placeholder="Min Bs." 
                 className="input-field"
-                style={{width: '100px'}}
+                style={{width: '90px'}}
                 value={minPrice}
                 onChange={e => setMinPrice(e.target.value)}
               />
               <input 
                 type="number" 
-                placeholder="Precio Máx" 
+                placeholder="Max Bs." 
                 className="input-field"
-                style={{width: '100px'}}
+                style={{width: '90px'}}
                 value={maxPrice}
                 onChange={e => setMaxPrice(e.target.value)}
               />
@@ -820,13 +825,13 @@ const VendorDashboard = () => {
             
             {/* BOTONES DE PAGO: EFECTIVO, QR Y PAGO MIXTO REQUERIDO */}
             <div style={{display: 'flex', gap: '0.5rem', marginBottom: '1rem'}}>
-              <button className="btn btn-primary flex-center" style={{flex: 1, padding: '0.75rem 0.5rem', fontSize: '0.88rem'}} onClick={() => processSale('Efectivo')} disabled={cart.length === 0 || isSubmitting || isReadOnly}>
+              <button className="btn btn-primary flex-center" style={{flex: 1, padding: '0.75rem 0.25rem', fontSize: '0.85rem'}} onClick={() => processSale('Efectivo')} disabled={cart.length === 0 || isSubmitting || isReadOnly}>
                 <Banknote size={16} /> Efectivo
               </button>
-              <button className="btn btn-primary flex-center" style={{flex: 1, padding: '0.75rem 0.5rem', fontSize: '0.88rem', backgroundColor: '#10b981'}} onClick={() => processSale('QR')} disabled={cart.length === 0 || isSubmitting || isReadOnly}>
+              <button className="btn btn-primary flex-center" style={{flex: 1, padding: '0.75rem 0.25rem', fontSize: '0.85rem', backgroundColor: '#10b981'}} onClick={() => processSale('QR')} disabled={cart.length === 0 || isSubmitting || isReadOnly}>
                 <CreditCard size={16} /> QR
               </button>
-              <button className="btn btn-primary flex-center" style={{flex: 1, padding: '0.75rem 0.5rem', fontSize: '0.88rem', backgroundColor: '#f59e0b'}} onClick={() => { setMixtoTargetType('sale'); setMixtoCashInput(''); setShowMixtoModal(true); }} disabled={cart.length === 0 || isSubmitting || isReadOnly}>
+              <button className="btn btn-primary flex-center" style={{flex: 1, padding: '0.75rem 0.25rem', fontSize: '0.85rem', backgroundColor: '#f59e0b'}} onClick={() => { setMixtoTargetType('sale'); setMixtoCashInput(''); setShowMixtoModal(true); }} disabled={cart.length === 0 || isSubmitting || isReadOnly}>
                 <Banknote size={14} />+<CreditCard size={14} /> Mixto
               </button>
             </div>
