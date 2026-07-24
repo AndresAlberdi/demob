@@ -730,7 +730,7 @@ const VendorDashboard = () => {
 
       {/* MAIN POS VIEW */}
       {activeTab === 'pos' && (
-        <div className="dashboard-grid">
+        <div className="pos-dashboard-grid">
           <div className="card glass-panel pos-catalog">
             
             {/* Standard Search Bar Format Restored */}

@@ -505,99 +505,122 @@ const AdminDashboard = () => {
 
   // --- PERIODICITY FILTER CALCULATIONS ---
   const getFilteredByPeriod = () => {
-    const now = new Date();
-    let startLimit = new Date(0);
-    let endLimit = new Date(now.getFullYear() + 10, 11, 31, 23, 59, 59);
+    try {
+      const now = new Date();
+      let startLimit = new Date(0);
+      let endLimit = new Date(now.getFullYear() + 10, 11, 31, 23, 59, 59);
 
-    if (periodFilter === 'hoy') {
-      startLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-      endLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-    } else if (periodFilter === 'semana') {
-      const startOfWeek = new Date(now);
-      const day = startOfWeek.getDay();
-      const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
-      startOfWeek.setDate(diff);
-      startOfWeek.setHours(0,0,0,0);
-      startLimit = startOfWeek;
-    } else if (periodFilter === 'mes') {
-      startLimit = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-    } else if (periodFilter === 'personalizado') {
-      if (startDateFilter) startLimit = new Date(`${startDateFilter}T00:00:00`);
-      if (endDateFilter) endLimit = new Date(`${endDateFilter}T23:59:59`);
+      if (periodFilter === 'hoy') {
+        startLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        endLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+      } else if (periodFilter === 'semana') {
+        const startOfWeek = new Date(now);
+        const day = startOfWeek.getDay();
+        const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
+        startOfWeek.setDate(diff);
+        startOfWeek.setHours(0,0,0,0);
+        startLimit = startOfWeek;
+      } else if (periodFilter === 'mes') {
+        startLimit = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+      } else if (periodFilter === 'personalizado') {
+        if (startDateFilter) startLimit = new Date(`${startDateFilter}T00:00:00`);
+        if (endDateFilter) endLimit = new Date(`${endDateFilter}T23:59:59`);
+      }
+
+      const checkTs = (ts) => {
+        if (!ts) return false;
+        try {
+          let dt = null;
+          if (typeof ts.toDate === 'function') {
+            dt = ts.toDate();
+          } else if (typeof ts === 'object' && ts !== null && typeof ts.seconds === 'number') {
+            dt = new Date(ts.seconds * 1000);
+          } else if (typeof ts === 'string' || typeof ts === 'number') {
+            dt = new Date(ts);
+          } else if (ts instanceof Date) {
+            dt = ts;
+          }
+          if (!dt || !(dt instanceof Date) || isNaN(dt.getTime())) return false;
+          return dt >= startLimit && dt <= endLimit;
+        } catch (e) {
+          return false;
+        }
+      };
+
+      const safeSales = Array.isArray(sales) ? sales : [];
+      const safeOrders = Array.isArray(orders) ? orders : [];
+      const safeLoans = Array.isArray(loans) ? loans : [];
+      const safeLosses = Array.isArray(allLosses) ? allLosses : [];
+      const safeExtras = Array.isArray(extraIncomes) ? extraIncomes : [];
+
+      const periodSales = safeSales.filter(s => checkTs(s?.timestamp));
+      const periodOrders = safeOrders.filter(o => checkTs(o?.timestamp));
+      const periodLoans = safeLoans.filter(l => checkTs(l?.timestamp) || checkTs(l?.repaidAt));
+      const periodLosses = safeLosses.filter(l => checkTs(l?.timestamp));
+      const periodExtraIncomes = safeExtras.filter(i => checkTs(i?.timestamp));
+
+      return { periodSales, periodOrders, periodLoans, periodLosses, periodExtraIncomes, checkTs };
+    } catch (e) {
+      console.error("Error filtering by period:", e);
+      return { periodSales: [], periodOrders: [], periodLoans: [], periodLosses: [], periodExtraIncomes: [], checkTs: () => false };
     }
-
-    const checkTs = (ts) => {
-      if (!ts) return false;
-      let dt;
-      if (typeof ts.toDate === 'function') dt = ts.toDate();
-      else if (ts.seconds) dt = new Date(ts.seconds * 1000);
-      else dt = new Date(ts);
-      return dt >= startLimit && dt <= endLimit;
-    };
-
-    const periodSales = sales.filter(s => checkTs(s.timestamp));
-    const periodOrders = orders.filter(o => checkTs(o.timestamp));
-    const periodLoans = loans.filter(l => checkTs(l.timestamp) || checkTs(l.repaidAt));
-    const periodLosses = allLosses.filter(l => checkTs(l.timestamp));
-    const periodExtraIncomes = extraIncomes.filter(i => checkTs(i.timestamp));
-
-    return { periodSales, periodOrders, periodLoans, periodLosses, periodExtraIncomes };
   };
 
-  const { periodSales, periodOrders, periodLoans, periodLosses, periodExtraIncomes } = getFilteredByPeriod();
+  const { periodSales = [], periodOrders = [], periodLoans = [], periodLosses = [], periodExtraIncomes = [], checkTs = () => false } = getFilteredByPeriod();
 
   // Metrics based on period
   const pCashSales = periodSales.reduce((acc, s) => {
-    if (s.method === 'Efectivo') return acc + (parseFloat(s.total) || 0);
-    if (s.method === 'MIXTO') return acc + (parseFloat(s.cashPaid) || 0);
+    if (s?.method === 'Efectivo') return acc + (parseFloat(s.total) || 0);
+    if (s?.method === 'MIXTO') return acc + (parseFloat(s.cashPaid) || 0);
     return acc;
   }, 0);
 
   const pQRSales = periodSales.reduce((acc, s) => {
-    if (s.method === 'QR') return acc + (parseFloat(s.total) || 0);
-    if (s.method === 'MIXTO') return acc + (parseFloat(s.qrPaid) || ((parseFloat(s.total)||0) - (parseFloat(s.cashPaid)||0)));
+    if (s?.method === 'QR') return acc + (parseFloat(s.total) || 0);
+    if (s?.method === 'MIXTO') return acc + (parseFloat(s.qrPaid) || ((parseFloat(s.total)||0) - (parseFloat(s.cashPaid)||0)));
     return acc;
   }, 0);
 
-  const pPurchases = periodOrders.reduce((acc, o) => acc + (parseFloat(o.amount) || 0), 0);
+  const pPurchases = periodOrders.reduce((acc, o) => acc + (parseFloat(o?.amount) || 0), 0);
   
-  const pLoanRepaymentsCash = periodLoans.filter(l => l.status === 'repaid').reduce((acc, l) => {
-    if (l.method === 'QR') return acc;
-    if (l.method === 'MIXTO') return acc + (parseFloat(l.cashPaid) || 0);
-    return acc + (l.cashPaid !== undefined ? parseFloat(l.cashPaid) : (parseFloat(l.amount) || 0));
+  const pLoanRepaymentsCash = periodLoans.filter(l => l?.status === 'repaid').reduce((acc, l) => {
+    if (l?.method === 'QR') return acc;
+    if (l?.method === 'MIXTO') return acc + (parseFloat(l.cashPaid) || 0);
+    return acc + (l?.cashPaid !== undefined ? parseFloat(l.cashPaid) : (parseFloat(l?.amount) || 0));
   }, 0);
 
-  const pLoanRepaymentsQR = periodLoans.filter(l => l.status === 'repaid').reduce((acc, l) => {
-    if (l.method === 'QR') return acc + (parseFloat(l.amount) || 0);
-    if (l.method === 'MIXTO') return acc + (parseFloat(l.qrPaid) || 0);
+  const pLoanRepaymentsQR = periodLoans.filter(l => l?.status === 'repaid').reduce((acc, l) => {
+    if (l?.method === 'QR') return acc + (parseFloat(l.amount) || 0);
+    if (l?.method === 'MIXTO') return acc + (parseFloat(l.qrPaid) || 0);
     return acc;
   }, 0);
 
   const pLoanRepayments = pLoanRepaymentsCash + pLoanRepaymentsQR;
 
-  const pExtraCash = periodExtraIncomes.filter(i => i.method === 'Efectivo').reduce((acc, i) => acc + (parseFloat(i.amount) || 0), 0);
-  const pExtraQR = periodExtraIncomes.filter(i => i.method === 'QR').reduce((acc, i) => acc + (parseFloat(i.amount) || 0), 0);
+  const pExtraCash = periodExtraIncomes.filter(i => i?.method === 'Efectivo').reduce((acc, i) => acc + (parseFloat(i?.amount) || 0), 0);
+  const pExtraQR = periodExtraIncomes.filter(i => i?.method === 'QR').reduce((acc, i) => acc + (parseFloat(i?.amount) || 0), 0);
 
   const pTotalIncome = pCashSales + pQRSales + pLoanRepayments + pExtraCash + pExtraQR;
   const pTotalExpenses = pPurchases;
   
   // Initial cash of shifts opened in this period
-  const pInitialCash = shifts.filter(s => checkTs(s.startTime || s.timestamp)).reduce((acc, s) => acc + (parseFloat(s.startCash) || 0), 0);
+  const safeShifts = Array.isArray(shifts) ? shifts : [];
+  const pInitialCash = safeShifts.filter(s => checkTs(s?.startTime || s?.timestamp)).reduce((acc, s) => acc + (parseFloat(s?.startCash) || 0), 0);
 
   // SALDO ACUMULADO EN CAJA REAL (NUNCA NEGATIVO)
   const rawCashBalance = pInitialCash + pCashSales + pLoanRepaymentsCash + pExtraCash - pPurchases;
   const pCashBalance = Math.max(0, rawCashBalance);
 
   // Active shift calculations
-  const activeShiftDoc = shifts.find(s => s.status === 'open');
+  const activeShiftDoc = safeShifts.find(s => s?.status === 'open');
   let activeShiftCash = 0;
   if (activeShiftDoc) {
-    const shiftSalesCash = sales.filter(s => s.shiftId === activeShiftDoc.id).reduce((acc, s) => {
-      if (s.method === 'Efectivo') return acc + (parseFloat(s.total) || 0);
-      if (s.method === 'MIXTO') return acc + (parseFloat(s.cashPaid) || 0);
+    const shiftSalesCash = (Array.isArray(sales) ? sales : []).filter(s => s?.shiftId === activeShiftDoc.id).reduce((acc, s) => {
+      if (s?.method === 'Efectivo') return acc + (parseFloat(s.total) || 0);
+      if (s?.method === 'MIXTO') return acc + (parseFloat(s.cashPaid) || 0);
       return acc;
     }, 0);
-    const shiftExpenses = orders.filter(o => o.shiftId === activeShiftDoc.id).reduce((acc, o) => acc + (parseFloat(o.amount) || 0), 0);
+    const shiftExpenses = (Array.isArray(orders) ? orders : []).filter(o => o?.shiftId === activeShiftDoc.id).reduce((acc, o) => acc + (parseFloat(o.amount) || 0), 0);
     activeShiftCash = Math.max(0, (parseFloat(activeShiftDoc.startCash) || 0) + shiftSalesCash - shiftExpenses);
   }
 

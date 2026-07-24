@@ -254,7 +254,7 @@ body {
 
 .pos-dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
   gap: 1.5rem;
   width: 100%;
 }
