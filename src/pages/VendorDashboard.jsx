@@ -7,6 +7,73 @@ import { useNavigate } from 'react-router-dom';
 import { exportToCSV } from '../utils/csvExporter';
 import { logEvent } from '../utils/logger';
 
+const HelpTooltip = ({ title, text, example }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block', marginLeft: 'auto' }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+        onMouseEnter={() => setIsOpen(true)}
+        onMouseLeave={() => setIsOpen(false)}
+        style={{
+          background: 'rgba(59, 130, 246, 0.15)',
+          color: '#2563eb',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          borderRadius: '50%',
+          width: '20px',
+          height: '20px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '0.75rem',
+          fontWeight: 'bold',
+          cursor: 'pointer',
+          padding: 0,
+          transition: 'all 0.2s',
+          lineHeight: 1
+        }}
+        title="Ver explicación contable / operativa"
+      >
+        ?
+      </button>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '26px',
+          right: 0,
+          width: '270px',
+          background: '#ffffff',
+          color: '#1e293b',
+          padding: '0.85rem',
+          borderRadius: '10px',
+          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.25), 0 8px 10px -6px rgba(0,0,0,0.15)',
+          border: '1px solid #cbd5e1',
+          zIndex: 9999,
+          fontSize: '0.82rem',
+          lineHeight: '1.4',
+          textAlign: 'left',
+          fontWeight: 'normal'
+        }}>
+          <div style={{ fontWeight: 'bold', color: '#1e40af', marginBottom: '0.35rem' }}>
+            ℹ️ {title}
+          </div>
+          <div style={{ marginBottom: '0.4rem', color: '#334155' }}>
+            {text}
+          </div>
+          {example && (
+            <div style={{ padding: '0.4rem 0.6rem', background: '#eff6ff', borderLeft: '3px solid #3b82f6', borderRadius: '4px', fontSize: '0.78rem', color: '#1e3a8a' }}>
+              <strong>Ejemplo:</strong> {example}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const VendorDashboard = () => {
   const { logout, currentUser, userRole } = useAuth();
   const navigate = useNavigate();
@@ -794,7 +861,14 @@ const VendorDashboard = () => {
           
           {/* CART SECTION */}
           <div className="card glass-panel cart-section">
-            <h3><ShoppingCart size={20} /> Pedido Actual</h3>
+            <h3 style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+              <span style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}><ShoppingCart size={20} /> Pedido Actual</span>
+              <HelpTooltip 
+                title="Proceso de Venta y Métodos de Pago" 
+                text="Permite procesar el cobro del pedido actual mediante Efectivo, QR bancario o Pago Mixto (Efectivo + QR)."
+                example="Venta de Bs. 10.00: Selecciona 'Mixto', ingresa Bs. 4.00 en efectivo y el sistema calcula Bs. 6.00 en QR automáticamente."
+              />
+            </h3>
             
             <div className="cart-items" style={{maxHeight: '280px', overflowY: 'auto'}}>
               {cart.length === 0 ? (

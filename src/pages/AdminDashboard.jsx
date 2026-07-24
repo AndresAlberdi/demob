@@ -20,6 +20,73 @@ const formatDate = (val) => {
   return '-';
 };
 
+const HelpTooltip = ({ title, text, example }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block', marginLeft: 'auto' }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+        onMouseEnter={() => setIsOpen(true)}
+        onMouseLeave={() => setIsOpen(false)}
+        style={{
+          background: 'rgba(59, 130, 246, 0.15)',
+          color: '#2563eb',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          borderRadius: '50%',
+          width: '20px',
+          height: '20px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '0.75rem',
+          fontWeight: 'bold',
+          cursor: 'pointer',
+          padding: 0,
+          transition: 'all 0.2s',
+          lineHeight: 1
+        }}
+        title="Ver explicación contable / operativa"
+      >
+        ?
+      </button>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '26px',
+          right: 0,
+          width: '270px',
+          background: '#ffffff',
+          color: '#1e293b',
+          padding: '0.85rem',
+          borderRadius: '10px',
+          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.25), 0 8px 10px -6px rgba(0,0,0,0.15)',
+          border: '1px solid #cbd5e1',
+          zIndex: 9999,
+          fontSize: '0.82rem',
+          lineHeight: '1.4',
+          textAlign: 'left',
+          fontWeight: 'normal'
+        }}>
+          <div style={{ fontWeight: 'bold', color: '#1e40af', marginBottom: '0.35rem' }}>
+            ℹ️ {title}
+          </div>
+          <div style={{ marginBottom: '0.4rem', color: '#334155' }}>
+            {text}
+          </div>
+          {example && (
+            <div style={{ padding: '0.4rem 0.6rem', background: '#eff6ff', borderLeft: '3px solid #3b82f6', borderRadius: '4px', fontSize: '0.78rem', color: '#1e3a8a' }}>
+              <strong>Ejemplo:</strong> {example}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AdminDashboard = () => {
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
@@ -704,33 +771,88 @@ const AdminDashboard = () => {
           </div>
 
           {/* Dynamic Financial Summary Cards */}
-          <div className="dashboard-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))'}}>
+          <div className="dashboard-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))'}}>
             <div className="card glass-panel" style={{borderLeft: '4px solid #10b981'}}>
-              <h3 className="card-title">💵 Ventas Efectivo</h3>
+              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                <span>💵 Ventas Efectivo</span>
+                <HelpTooltip 
+                  title="Ventas Cobradas en Billetes/Monedas" 
+                  text="Suma de las ventas pagadas en efectivo durante el período seleccionado."
+                  example="Si vendiste 2 gaseosas a Bs. 5.50 en efectivo, aquí suma Bs. 11.00."
+                />
+              </h3>
               <div className="card-value">Bs. {pCashSales.toFixed(2)}</div>
             </div>
+
             <div className="card glass-panel" style={{borderLeft: '4px solid #3b82f6'}}>
-              <h3 className="card-title">📱 Ventas QR</h3>
+              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                <span>📱 Ventas QR</span>
+                <HelpTooltip 
+                  title="Ventas Transferencia / Código QR" 
+                  text="Monto ingresado directamente a la cuenta bancaria. No afecta los billetes en caja."
+                  example="Si un cliente te transfirió Bs. 6.50 por QR, ingresa al banco y se suma aquí."
+                />
+              </h3>
               <div className="card-value">Bs. {pQRSales.toFixed(2)}</div>
             </div>
+
             <div className="card glass-panel" style={{borderLeft: '4px solid #ef4444'}}>
-              <h3 className="card-title">🛒 Compras / Egresos</h3>
+              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                <span>🛒 Compras / Egresos</span>
+                <HelpTooltip 
+                  title="Egresos y Compras en Efectivo" 
+                  text="Pagos realizados con dinero de la caja registradora (proveedores o gastos)."
+                  example="Pagaste Bs. 20.00 en efectivo por recarga de insumos a un proveedor."
+                />
+              </h3>
               <div className="card-value">Bs. {pPurchases.toFixed(2)}</div>
             </div>
+
             <div className="card glass-panel" style={{borderLeft: '4px solid #8b5cf6'}}>
-              <h3 className="card-title">🔄 Cobro Préstamos</h3>
+              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                <span>🔄 Cobro Préstamos</span>
+                <HelpTooltip 
+                  title="Cobros de Deudas / Fiados" 
+                  text="Dinero recuperado por pago de fiados o préstamos registrados anteriormente."
+                  example="Un cliente devuelve Bs. 15.00 que debía en efectivo."
+                />
+              </h3>
               <div className="card-value">Bs. {pLoanRepayments.toFixed(2)}</div>
             </div>
+
             <div className="card glass-panel" style={{borderLeft: '4px solid #14b8a6'}}>
-              <h3 className="card-title">➕ Ingresos Adicionales</h3>
+              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                <span>➕ Ingresos Adicionales</span>
+                <HelpTooltip 
+                  title="Ingresos Extraordinarios y Aportes" 
+                  text="Ingresos en caja no provenientes de la venta directa de productos en catálogo."
+                  example="Reembolso de Bs. 8.00 del distribuidor por envases o aporte a caja."
+                />
+              </h3>
               <div className="card-value">Bs. {(pExtraCash + pExtraQR).toFixed(2)}</div>
             </div>
+
             <div className="card glass-panel" style={{borderLeft: '4px solid #f59e0b'}}>
-              <h3 className="card-title">💰 Saldo Acumulado Caja</h3>
+              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                <span>💰 Flujo Neto Efectivo</span>
+                <HelpTooltip 
+                  title="Flujo Neto de Efectivo del Período" 
+                  text="Saldo acumulado de billetes generados netos en el período (Ventas Ef + Cobros - Egresos). Difiere de la 'Caja Actual' porque esta última incluye el Dinero Inicial de Apertura."
+                  example="Si cobraste Bs. 11.00 en ventas y Bs. 8.00 extra sin gastos, el flujo neto de hoy es Bs. 19.00."
+                />
+              </h3>
               <div className="card-value">Bs. {pCashBalance.toFixed(2)}</div>
             </div>
+
             <div className="card glass-panel" style={{borderLeft: '4px solid #06b6d4'}}>
-              <h3 className="card-title">📈 Ingresos Totales</h3>
+              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                <span>📈 Ingresos Totales</span>
+                <HelpTooltip 
+                  title="Ingresos Brutos Combinados (Efectivo + QR)" 
+                  text="Suma total de todas las entradas financieras (Ventas Efectivo + QR + Cobros + Extras)."
+                  example="Suma total de Bs. 11.00 (Ef) + Bs. 6.50 (QR) + Bs. 13.00 (Otros) = Bs. 30.50."
+                />
+              </h3>
               <div className="card-value">Bs. {pTotalIncome.toFixed(2)}</div>
             </div>
           </div>
