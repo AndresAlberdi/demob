@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
-import { collection, query, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, query, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy, serverTimestamp, increment } from 'firebase/firestore';
 import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity, Download, Filter, FileText, Calendar, ListFilter, PlusCircle, ArrowDownCircle, DollarSign } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { parseAndUploadCSV } from '../utils/csvParser';
@@ -126,7 +126,7 @@ const AdminDashboard = () => {
   });
 
   // Form & Edit states
-  const [newUser, setNewUser] = useState({ name: '', pin: '' });
+  const [newUser, setNewUser] = useState({ name: '', pin: '', role: 'vendedor' });
   const [newMotivo, setNewMotivo] = useState('');
   
   // Category ABM State
@@ -137,7 +137,7 @@ const AdminDashboard = () => {
   // Product Edit States
   const [editingProduct, setEditingProduct] = useState(null);
   const [editProdForm, setEditProdForm] = useState({ name: '', category: '', price: '', stock: '' });
-  const [newProdForm, setNewProdForm] = useState({ name: '', category: 'CON GAS', price: '', stock: '10' });
+  const [newProdForm, setNewProdForm] = useState({ name: '', category: 'CON GAS', price: '', stock: '10', costPrice: '', minStock: '3' });
   
   // Category Move State
   const [moveFromCategory, setMoveFromCategory] = useState('');
@@ -169,6 +169,14 @@ const AdminDashboard = () => {
     supplier: ''
   });
   const [purchaseCart, setPurchaseCart] = useState([]); // [{ productId, productName, qty, unitCostPrice }]
+  const [purchaseFilters, setPurchaseFilters] = useState({
+    search: '',
+    category: 'todas',
+    minSalePrice: '',
+    maxSalePrice: '',
+    minCostPrice: '',
+    maxCostPrice: ''
+  });
 
   // 4. Vendor Losses & Fines System
   const [fineHistory, setFineHistory] = useState([]);
@@ -176,7 +184,8 @@ const AdminDashboard = () => {
     vendorId: '',
     productId: '',
     qty: 1,
-    reason: ''
+    reason: '',
+    deductInventory: true
   });
 
   useEffect(() => {
@@ -404,12 +413,14 @@ const AdminDashboard = () => {
         name: newProdForm.name.trim(),
         category: newProdForm.category.trim() || (categories[0] || 'GENERAL'),
         price: parseFloat(newProdForm.price),
+        costPrice: parseFloat(newProdForm.costPrice) || (parseFloat(newProdForm.price) * 0.8),
         stock: parseInt(newProdForm.stock) || 0,
+        minStock: parseInt(newProdForm.minStock) || 3,
         isDeleted: false
       });
-      await logEvent('PRODUCT_CREATED', currentUser?.email, `Creado producto manual "${newProdForm.name}" (${newProdForm.category}) - Bs. ${newProdForm.price}, Stock: ${newProdForm.stock}`);
+      await logEvent('PRODUCT_CREATED', currentUser?.email, `Creado producto manual "${newProdForm.name}" (${newProdForm.category}) - Venta: Bs. ${newProdForm.price}, Compra: Bs. ${newProdForm.costPrice || (parseFloat(newProdForm.price) * 0.8)}, Stock: ${newProdForm.stock}`);
       alert("Producto creado exitosamente");
-      setNewProdForm({ name: '', category: categories[0] || 'CON GAS', price: '', stock: '10' });
+      setNewProdForm({ name: '', category: categories[0] || 'CON GAS', price: '', stock: '10', costPrice: '', minStock: '3' });
       loadData();
     } catch (e) {
       alert("Error creando producto");
@@ -522,10 +533,10 @@ const AdminDashboard = () => {
       await addDoc(collection(db, "app_users"), {
         name: newUser.name,
         pin: newUser.pin,
-        role: 'vendedor'
+        role: newUser.role
       });
-      await logEvent('USER_CREATED', currentUser?.email, `Registrado nuevo vendedor: "${newUser.name}"`);
-      setNewUser({name: '', pin: ''});
+      await logEvent('USER_CREATED', currentUser?.email, `Registrado nuevo ${newUser.role}: "${newUser.name}"`);
+      setNewUser({name: '', pin: '', role: 'vendedor'});
       loadData();
     } catch (e) {
       alert("Error creando usuario");
@@ -733,9 +744,14 @@ const AdminDashboard = () => {
         accumulatedFines: increment(fineAmount)
       });
 
-      await logEvent('VENDOR_FINE_ASSIGNED', currentUser?.email, `Asignada multa a vendor "${vendor.name}": ${qty}x ${product.name} (Bs. ${fineAmount.toFixed(2)})`);
+      if (assignFineForm.deductInventory) {
+        const pRef = doc(db, "products", product.id);
+        await updateDoc(pRef, { stock: increment(-qty) });
+      }
+
+      await logEvent('VENDOR_FINE_ASSIGNED', currentUser?.email, `Asignada multa a vendor "${vendor.name}": ${qty}x ${product.name} (Bs. ${fineAmount.toFixed(2)})${assignFineForm.deductInventory ? ' y descontado de inventario' : ''}`);
       alert(`Multa de Bs. ${fineAmount.toFixed(2)} asignada exitosamente a ${vendor.name}`);
-      setAssignFineForm({ vendorId: '', productId: '', qty: 1, reason: '' });
+      setAssignFineForm({ vendorId: '', productId: '', qty: 1, reason: '', deductInventory: true });
       loadData();
     } catch (err) {
       console.error(err);
@@ -785,6 +801,35 @@ const AdminDashboard = () => {
     } catch (err) {
       console.error(err);
       alert("Error al cobrar multa a vendedor");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const recalculateFines = async () => {
+    if (!window.confirm("¿Estás seguro que deseas recalcular los saldos de multas de todos los vendedores en base a su histórico pendiente?")) return;
+    setIsLoading(true);
+    try {
+      let updatedCount = 0;
+      for (const vendor of appUsers) {
+        if (vendor.role === 'admin') continue;
+        
+        const fSnap = await getDocs(query(collection(db, "vendor_fines"), where("vendorId", "==", vendor.id), where("status", "==", "pending")));
+        let correctSum = 0;
+        fSnap.docs.forEach(d => {
+          correctSum += (d.data().fineAmount || 0);
+        });
+
+        if (correctSum !== vendor.accumulatedFines) {
+          await updateDoc(doc(db, "app_users", vendor.id), { accumulatedFines: correctSum });
+          updatedCount++;
+        }
+      }
+      alert(`Saldos recalculados exitosamente. Vendedores actualizados: ${updatedCount}`);
+      loadData();
+    } catch (e) {
+      console.error(e);
+      alert("Error al recalcular saldos de multas.");
     } finally {
       setIsLoading(false);
     }
@@ -1466,12 +1511,22 @@ const AdminDashboard = () => {
                 </div>
                 <div style={{display: 'flex', gap: '0.5rem'}}>
                   <div className="form-group" style={{flex: 1}}>
-                    <label>Precio (Bs.)</label>
+                    <label>Precio Venta (Bs.)</label>
                     <input type="number" step="0.10" className="input-field" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm, price: e.target.value})} required/>
                   </div>
                   <div className="form-group" style={{flex: 1}}>
+                    <label>Precio Compra (Bs.)</label>
+                    <input type="number" step="0.10" className="input-field" value={newProdForm.costPrice} onChange={e=>setNewProdForm({...newProdForm, costPrice: e.target.value})} placeholder="Opcional"/>
+                  </div>
+                </div>
+                <div style={{display: 'flex', gap: '0.5rem'}}>
+                  <div className="form-group" style={{flex: 1}}>
                     <label>Stock Inicial</label>
                     <input type="number" className="input-field" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm, stock: e.target.value})} required/>
+                  </div>
+                  <div className="form-group" style={{flex: 1}}>
+                    <label>Stock Mínimo</label>
+                    <input type="number" className="input-field" value={newProdForm.minStock} onChange={e=>setNewProdForm({...newProdForm, minStock: e.target.value})} required/>
                   </div>
                 </div>
                 <button type="submit" className="btn btn-primary btn-block">Guardar Producto</button>
@@ -1838,6 +1893,26 @@ const AdminDashboard = () => {
           <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
             <div className="card glass-panel">
               <h3>Seleccionar Productos (Máx. 40 ítems)</h3>
+              
+              {/* Filtros de Productos */}
+              <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem', padding: '0.5rem', backgroundColor: 'var(--dropdown-bg)', borderRadius: '8px', border: '1px solid var(--border-color)'}}>
+                <input type="text" className="input-field" placeholder="Buscar nombre..." value={purchaseFilters.search} onChange={e => setPurchaseFilters({...purchaseFilters, search: e.target.value})} style={{flex: '1 1 150px', padding: '0.25rem 0.5rem'}} />
+                <select className="input-field" value={purchaseFilters.category} onChange={e => setPurchaseFilters({...purchaseFilters, category: e.target.value})} style={{flex: '1 1 120px', padding: '0.25rem'}}>
+                  <option value="todas">Categoría: Todas</option>
+                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <div style={{display: 'flex', gap: '0.25rem', alignItems: 'center', flex: '1 1 120px'}}>
+                  <span style={{fontSize: '0.75rem', whiteSpace: 'nowrap'}}>Venta:</span>
+                  <input type="number" placeholder="Min" className="input-field" value={purchaseFilters.minSalePrice} onChange={e => setPurchaseFilters({...purchaseFilters, minSalePrice: e.target.value})} style={{padding: '0.25rem', width: '50px'}} />
+                  <input type="number" placeholder="Max" className="input-field" value={purchaseFilters.maxSalePrice} onChange={e => setPurchaseFilters({...purchaseFilters, maxSalePrice: e.target.value})} style={{padding: '0.25rem', width: '50px'}} />
+                </div>
+                <div style={{display: 'flex', gap: '0.25rem', alignItems: 'center', flex: '1 1 120px'}}>
+                  <span style={{fontSize: '0.75rem', whiteSpace: 'nowrap'}}>Compra:</span>
+                  <input type="number" placeholder="Min" className="input-field" value={purchaseFilters.minCostPrice} onChange={e => setPurchaseFilters({...purchaseFilters, minCostPrice: e.target.value})} style={{padding: '0.25rem', width: '50px'}} />
+                  <input type="number" placeholder="Max" className="input-field" value={purchaseFilters.maxCostPrice} onChange={e => setPurchaseFilters({...purchaseFilters, maxCostPrice: e.target.value})} style={{padding: '0.25rem', width: '50px'}} />
+                </div>
+              </div>
+
               <div style={{overflowY: 'auto', maxHeight: '280px', marginTop: '0.5rem'}}>
                 <table style={{width: '100%', borderCollapse: 'collapse'}}>
                   <thead>
@@ -1849,7 +1924,17 @@ const AdminDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {products.filter(p => !p.isDeleted).map(p => {
+                    {products.filter(p => {
+                      if (p.isDeleted) return false;
+                      if (purchaseFilters.category !== 'todas' && p.category !== purchaseFilters.category) return false;
+                      if (purchaseFilters.search && !p.name.toLowerCase().includes(purchaseFilters.search.toLowerCase())) return false;
+                      if (purchaseFilters.minSalePrice && parseFloat(p.price) < parseFloat(purchaseFilters.minSalePrice)) return false;
+                      if (purchaseFilters.maxSalePrice && parseFloat(p.price) > parseFloat(purchaseFilters.maxSalePrice)) return false;
+                      const cost = p.costPrice !== undefined ? p.costPrice : Math.round((p.price || 0) * 0.8 * 100) / 100;
+                      if (purchaseFilters.minCostPrice && cost < parseFloat(purchaseFilters.minCostPrice)) return false;
+                      if (purchaseFilters.maxCostPrice && cost > parseFloat(purchaseFilters.maxCostPrice)) return false;
+                      return true;
+                    }).map(p => {
                       const defaultCost = p.costPrice !== undefined ? p.costPrice : Math.round((p.price || 0) * 0.8 * 100) / 100;
                       return (
                         <tr key={p.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
@@ -1924,6 +2009,54 @@ const AdminDashboard = () => {
                   </tbody>
                 </table>
               )}
+            </div>
+
+            {/* Purchase History */}
+            <div className="card glass-panel" style={{marginTop: '1.5rem'}}>
+              <h3>📜 Histórico de Compras de Productos</h3>
+              <div style={{overflowY: 'auto', maxHeight: '400px', marginTop: '0.5rem'}}>
+                {orders.filter(o => o.type === 'compra_productos').length === 0 ? (
+                  <p style={{color: 'var(--text-secondary)', padding: '1rem', textAlign: 'center'}}>No hay registro de compras de productos.</p>
+                ) : (
+                  <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem'}}>
+                    <thead>
+                      <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                        <th style={{padding: '0.5rem'}}>Fecha</th>
+                        <th style={{padding: '0.5rem'}}>Descripción</th>
+                        <th style={{padding: '0.5rem'}}>Total</th>
+                        <th style={{padding: '0.5rem'}}>Ítems</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orders
+                        .filter(o => o.type === 'compra_productos')
+                        .sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))
+                        .map(order => (
+                        <tr key={order.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                          <td style={{padding: '0.5rem'}}>
+                            {order.timestamp?.seconds ? new Date(order.timestamp.seconds * 1000).toLocaleString('es-BO') : 'N/A'}
+                          </td>
+                          <td style={{padding: '0.5rem'}}>
+                            <strong>{order.description}</strong>
+                            <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
+                              {order.supplier && `Prov: ${order.supplier} | `}
+                              {order.receiptType}: {order.receiptNumber || 'S/N'}
+                            </div>
+                          </td>
+                          <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {order.amount?.toFixed(2)}</td>
+                          <td style={{padding: '0.5rem'}}>
+                            <ul style={{margin: 0, paddingLeft: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
+                              {order.items?.map((item, idx) => (
+                                <li key={idx}>{item.qty}x {item.productName}</li>
+                              ))}
+                            </ul>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -2059,7 +2192,7 @@ const AdminDashboard = () => {
                 </div>
 
                 <div className="form-group">
-                  <label>Motivo / Observación</label>
+                  <label>Motivo</label>
                   <input 
                     type="text" 
                     className="input-field" 
@@ -2068,14 +2201,31 @@ const AdminDashboard = () => {
                     onChange={e => setAssignFineForm({...assignFineForm, reason: e.target.value})} 
                   />
                 </div>
+                
+                <div className="form-group" style={{display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem'}}>
+                  <input 
+                    type="checkbox" 
+                    id="deductInventory"
+                    checked={assignFineForm.deductInventory}
+                    onChange={e => setAssignFineForm({...assignFineForm, deductInventory: e.target.checked})}
+                  />
+                  <label htmlFor="deductInventory" style={{margin: 0, cursor: 'pointer'}}>Descontar del inventario general</label>
+                </div>
 
-                <button type="submit" className="btn btn-primary btn-block">Asignar Multa</button>
+                <button type="submit" className="btn btn-danger btn-block" disabled={isLoading}>
+                  {isLoading ? 'Procesando...' : 'Asignar Multa y Guardar'}
+                </button>
               </form>
             </div>
 
             {/* Accumulated Fines Summary */}
             <div className="card glass-panel">
-              <h3>💰 Saldo Acumulado de Multas por Vendedor</h3>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                <h3>💰 Saldo Acumulado de Multas por Vendedor</h3>
+                <button className="btn btn-secondary btn-sm" onClick={recalculateFines} disabled={isLoading}>
+                  🔄 Recalcular Saldos
+                </button>
+              </div>
               <table style={{width: '100%', borderCollapse: 'collapse', marginTop: '1rem'}}>
                 <thead>
                   <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
