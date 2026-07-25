@@ -67,7 +67,7 @@ describe('Racquet La Estación UI & Authentication Unit Tests', () => {
     );
 
     // Switch to Admin tab
-    const adminTab = screen.getByText('Administrador');
+    const adminTab = screen.getByText('Admin');
     fireEvent.click(adminTab);
 
     const emailInput = screen.getByPlaceholderText('admin@demob.com');

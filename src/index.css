@@ -217,14 +217,14 @@ body {
 .btn-block {
   width: 100%;
 }
-
 .btn-secondary {
-  background-color: rgba(243, 244, 246, 0.8);
+  background-color: var(--dropdown-bg);
   color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .btn-secondary:hover {
-  background-color: rgba(229, 231, 235, 1);
+  background-color: var(--dropdown-hover);
 }
 
 .btn-danger {

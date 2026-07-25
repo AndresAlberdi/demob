@@ -82,6 +82,7 @@ const VendorDashboard = () => {
   // Data States
   const [products, setProducts] = useState([]);
   const [motivos, setMotivos] = useState([]);
+  const [extraordinaryMotives, setExtraordinaryMotives] = useState([]);
   const [cart, setCart] = useState([]);
   const [loans, setLoans] = useState([]);
   
@@ -165,6 +166,7 @@ const VendorDashboard = () => {
         const mSnapshot = await getDocs(query(collection(db, "settings")));
         mSnapshot.forEach(doc => {
           if (doc.id === 'motivos') setMotivos(doc.data()?.list || []);
+          if (doc.id === 'extraordinary_motives') setExtraordinaryMotives(doc.data()?.list || []);
         });
       } catch (mErr) {
         console.warn("Motivos fetch warning:", mErr);
@@ -902,7 +904,7 @@ const VendorDashboard = () => {
                     style={{cursor: isReadOnly || p.stock <= 0 ? 'not-allowed' : 'pointer'}}
                   >
                     <h4 style={{fontSize: '1rem', marginBottom: '0.25rem'}}>{p.name}</h4>
-                    <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
+                    <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 'bold'}}>
                       <span>Tipo: {p.category}</span>
                       <span>Stock: {p.stock}</span>
                     </div>
@@ -1357,8 +1359,8 @@ const VendorDashboard = () => {
                   required
                 >
                   <option value="">-- Seleccionar Motivo --</option>
-                  {motivos.length > 0 ? (
-                    motivos.map((m, idx) => <option key={idx} value={typeof m === 'string' ? m : m.name}>{typeof m === 'string' ? m : m.name}</option>)
+                  {extraordinaryMotives.length > 0 ? (
+                    extraordinaryMotives.map((m, idx) => <option key={idx} value={typeof m === 'string' ? m : m.name}>{typeof m === 'string' ? m : m.name}</option>)
                   ) : (
                     <>
                       <option value="Préstamo de Funcionario">Préstamo de Funcionario</option>

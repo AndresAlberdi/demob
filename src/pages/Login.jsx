@@ -20,7 +20,9 @@ const Login = () => {
     setIsSubmitting(true);
     
     try {
-      await login(email, password);
+      const currentEmail = e.target.email?.value || email;
+      const currentPassword = e.target.password?.value || password;
+      await login(currentEmail, currentPassword);
       navigate('/');
     } catch (err) {
       console.error(err);
@@ -63,12 +65,15 @@ const Login = () => {
           <p>Sistema de Control, Inventario & POS</p>
         </div>
         
-        <div className="tabs" style={{marginBottom: '1.5rem'}}>
-          <div className={`tab ${loginMethod === 'pin' ? 'active' : ''}`} onClick={() => setLoginMethod('pin')}>
-            <KeyRound size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Vendedor (PIN)
+        <div className="tabs" style={{marginBottom: '1.5rem', display: 'flex', gap: '0.25rem'}}>
+          <div className={`tab ${loginMethod === 'pin' ? 'active' : ''}`} onClick={() => setLoginMethod('pin')} style={{fontSize: '0.85rem', padding: '0.5rem'}}>
+            <KeyRound size={14} style={{display: 'inline', marginRight: '0.25rem'}}/> Vendedor
           </div>
-          <div className={`tab ${loginMethod === 'email' ? 'active' : ''}`} onClick={() => setLoginMethod('email')}>
-            <UserCircle size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Administrador
+          <div className={`tab ${loginMethod === 'supervisor' ? 'active' : ''}`} onClick={() => setLoginMethod('supervisor')} style={{fontSize: '0.85rem', padding: '0.5rem'}}>
+            <KeyRound size={14} style={{display: 'inline', marginRight: '0.25rem'}}/> Supervisor
+          </div>
+          <div className={`tab ${loginMethod === 'email' ? 'active' : ''}`} onClick={() => setLoginMethod('email')} style={{fontSize: '0.85rem', padding: '0.5rem'}}>
+            <UserCircle size={14} style={{display: 'inline', marginRight: '0.25rem'}}/> Admin
           </div>
         </div>
 
@@ -77,8 +82,6 @@ const Login = () => {
         {/* Admin Form (Always in DOM for Chrome Password Manager detection) */}
         <form 
           onSubmit={handleEmailSubmit} 
-          method="post" 
-          action="#"
           style={{ display: loginMethod === 'email' ? 'block' : 'none' }}
         >
           <div className="form-group">
@@ -124,10 +127,10 @@ const Login = () => {
           </button>
         </form>
 
-        {/* Vendor PIN Form */}
+        {/* PIN Form */}
         <form 
           onSubmit={handlePinSubmit}
-          style={{ display: loginMethod === 'pin' ? 'block' : 'none' }}
+          style={{ display: (loginMethod === 'pin' || loginMethod === 'supervisor') ? 'block' : 'none' }}
         >
           <div className="form-group">
             <label htmlFor="vendor-pin">PIN de Acceso</label>
@@ -140,7 +143,7 @@ const Login = () => {
               onChange={(e) => setPin(e.target.value)}
               placeholder="••••••"
               maxLength="6"
-              required={loginMethod === 'pin'}
+              required={loginMethod === 'pin' || loginMethod === 'supervisor'}
               style={{textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.25rem'}}
             />
           </div>
@@ -153,7 +156,7 @@ const Login = () => {
             {isSubmitting ? (
               <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>
             ) : (
-              'Ingresar al POS'
+              loginMethod === 'supervisor' ? 'Ingresar como Supervisor' : 'Ingresar al POS'
             )}
           </button>
         </form>
