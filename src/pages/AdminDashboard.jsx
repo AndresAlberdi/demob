@@ -161,6 +161,10 @@ const AdminDashboard = () => {
   const [extraordinaryMotives, setExtraordinaryMotives] = useState(['Préstamo de Funcionario', 'Sobrante de Caja', 'Aporte de Capital', 'Otro Ingreso Extraordinario']);
   const [newExtraordinaryMotive, setNewExtraordinaryMotive] = useState('');
 
+  // 2b. Receipt Types ABM
+  const [receiptTypes, setReceiptTypes] = useState(['Recibo', 'Factura', 'Vale', 'Ticket', 'Sin Comprobante']);
+  const [newReceiptType, setNewReceiptType] = useState('');
+
   // 3. Standalone Product Purchase Module (up to 40 items)
   const [purchaseForm, setPurchaseForm] = useState({
     description: '',
@@ -196,7 +200,7 @@ const AdminDashboard = () => {
     setIsLoading(true);
     try {
       const [
-        pSnap, catSnap, uSnap, mSnap, lSnap, sSnap, shSnap, oSnap, loanSnap, extraSnap, logSnap, expTypeSnap, extMotSnap, finesSnap
+        pSnap, catSnap, uSnap, mSnap, lSnap, sSnap, shSnap, oSnap, loanSnap, extraSnap, logSnap, expTypeSnap, extMotSnap, finesSnap, receiptSnap
       ] = await Promise.allSettled([
         getDocs(query(collection(db, "products"))),
         getDoc(doc(db, "settings", "categories")),
@@ -211,7 +215,8 @@ const AdminDashboard = () => {
         getDocs(query(collection(db, "system_logs"))),
         getDoc(doc(db, "settings", "expense_types")),
         getDoc(doc(db, "settings", "extraordinary_motives")),
-        getDocs(query(collection(db, "vendor_fines")))
+        getDocs(query(collection(db, "vendor_fines"))),
+        getDoc(doc(db, "settings", "receipt_types"))
       ]);
 
       let loadedProds = [];
@@ -251,6 +256,10 @@ const AdminDashboard = () => {
 
       if (extMotSnap.status === 'fulfilled' && extMotSnap.value.exists()) {
         setExtraordinaryMotives(extMotSnap.value.data().list || []);
+      }
+
+      if (receiptSnap.status === 'fulfilled' && receiptSnap.value.exists()) {
+        setReceiptTypes(receiptSnap.value.data().list || []);
       }
 
       if (finesSnap.status === 'fulfilled') {
@@ -637,6 +646,34 @@ const AdminDashboard = () => {
       loadData();
     } catch (err) {
       alert("Error eliminando motivo");
+    }
+  };
+
+  // --- ABM TIPOS DE COMPROBANTES ---
+  const addReceiptType = async (e) => {
+    e.preventDefault();
+    const name = newReceiptType.trim();
+    if (!name) return;
+    try {
+      const updated = Array.from(new Set([...receiptTypes, name]));
+      setReceiptTypes(updated);
+      setNewReceiptType('');
+      await setDoc(doc(db, "settings", "receipt_types"), { list: updated });
+      loadData();
+    } catch (err) {
+      alert("Error al agregar tipo de comprobante");
+    }
+  };
+
+  const deleteReceiptType = async (item) => {
+    if (!window.confirm(`¿Eliminar el tipo de comprobante "${item}"?`)) return;
+    try {
+      const updated = receiptTypes.filter(t => t !== item);
+      setReceiptTypes(updated);
+      await setDoc(doc(db, "settings", "receipt_types"), { list: updated });
+      loadData();
+    } catch (e) {
+      alert("Error al eliminar tipo");
     }
   };
 
@@ -1821,6 +1858,9 @@ const AdminDashboard = () => {
             <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
               El registro incrementará automáticamente el stock de los productos seleccionados.
             </p>
+            <div className="alert badge-error" style={{marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(231, 113, 109, 0.1)', color: 'var(--danger-color)', border: '1px solid var(--danger-color)'}}>
+              <span style={{fontWeight: 'bold'}}>Nota:</span> Las compras realizadas por el Administrador <strong>NO SON CON CAJA</strong> y no afectan a la caja actual.
+            </div>
             <form onSubmit={executeProductPurchase}>
               <div className="form-group">
                 <label>Descripción de la Compra</label>
@@ -1852,9 +1892,7 @@ const AdminDashboard = () => {
                   value={purchaseForm.receiptType} 
                   onChange={e => setPurchaseForm({...purchaseForm, receiptType: e.target.value})}
                 >
-                  <option value="factura">Factura</option>
-                  <option value="recibo">Recibo</option>
-                  <option value="ninguno">Sin Comprobante</option>
+                  {receiptTypes.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
 
@@ -2136,6 +2174,23 @@ const AdminDashboard = () => {
               ))}
               {extraordinaryMotives.length === 0 && (
                 <p style={{color: 'var(--text-secondary)'}}>No se han registrado motivos extraordinarios aún.</p>
+              )}
+            </div>
+
+            <h3 style={{marginTop: '2rem'}}>Tipos de Comprobante ({receiptTypes.length})</h3>
+            <form onSubmit={addReceiptType} style={{display: 'flex', gap: '0.5rem', marginBottom: '1rem'}}>
+              <input type="text" className="input-field" value={newReceiptType} onChange={e=>setNewReceiptType(e.target.value)} placeholder="Ej: Vale, Ticket..." required/>
+              <button type="submit" className="btn btn-primary">+</button>
+            </form>
+            <div className="item-list">
+              {receiptTypes.map((item, idx) => (
+                <div key={idx} className="list-item" style={{padding: '0.5rem'}}>
+                  <span>{item}</span>
+                  <button className="btn btn-secondary" style={{padding: '0.2rem 0.5rem'}} onClick={() => deleteReceiptType(item)}><X size={14}/></button>
+                </div>
+              ))}
+              {receiptTypes.length === 0 && (
+                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>No se han registrado tipos de comprobante aún.</p>
               )}
             </div>
           </div>
@@ -2510,6 +2565,26 @@ const AdminDashboard = () => {
                 </div>
               ))}
               {pendingLosses.length === 0 && <p style={{color: 'var(--text-secondary)', padding: '1rem', textAlign: 'center'}}>No hay pérdidas pendientes de revisión.</p>}
+            </div>
+            
+            <h3 style={{marginTop: '2rem'}}>📜 Histórico de Pérdidas Procesadas</h3>
+            <div className="item-list" style={{maxHeight: '300px'}}>
+              {allLosses.filter(l => l.status !== 'pending').map(loss => (
+                <div key={loss.id} className="list-item" style={{flexDirection: 'column', alignItems: 'flex-start', opacity: 0.8}}>
+                  <div className="flex-between" style={{width: '100%', marginBottom: '0.5rem'}}>
+                    <h4>{loss.qty}x {loss.productName}</h4>
+                    <span className={`badge ${loss.status === 'approved' ? 'badge-success' : 'badge-error'}`}>
+                      {loss.status === 'approved' ? 'Aprobado/Descontado' : 'Rechazado'}
+                    </span>
+                  </div>
+                  <div className="flex-between" style={{width: '100%'}}>
+                    <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                      Vendedor: {loss.vendorName || '-'} | Motivo: {loss.reason} | Fecha: {formatDate(loss.timestamp)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {allLosses.filter(l => l.status !== 'pending').length === 0 && <p style={{color: 'var(--text-secondary)', padding: '1rem', textAlign: 'center'}}>No hay registro de pérdidas procesadas.</p>}
             </div>
           </div>
           

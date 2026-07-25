@@ -83,6 +83,7 @@ const VendorDashboard = () => {
   const [products, setProducts] = useState([]);
   const [motivos, setMotivos] = useState([]);
   const [extraordinaryMotives, setExtraordinaryMotives] = useState([]);
+  const [expenseTypes, setExpenseTypes] = useState(['Egreso General']);
   const [cart, setCart] = useState([]);
   const [loans, setLoans] = useState([]);
   
@@ -106,8 +107,17 @@ const VendorDashboard = () => {
   // Forms States
   const [loanForm, setLoanForm] = useState({ name: '' });
   const [lossForm, setLossForm] = useState({ reason: '', productId: '', qty: 1 });
-  const [orderForm, setOrderForm] = useState({ type: 'pedido', description: '', amount: '', receiptType: 'ninguno', receiptNumber: '' });
+  const [orderForm, setOrderForm] = useState({ type: 'Servicios Básicos', description: '', amount: '', receiptType: 'ninguno', receiptNumber: '' });
   const [currentCash, setCurrentCash] = useState(0);
+
+  // Standalone Product Purchase Module (up to 40 items) for Vendor
+  const [purchaseForm, setPurchaseForm] = useState({
+    description: '',
+    supplier: '',
+    receiptType: 'ninguno',
+    receiptNumber: ''
+  });
+  const [purchaseCart, setPurchaseCart] = useState([]);
   
   // Pago Mixto Modal State
   const [showMixtoModal, setShowMixtoModal] = useState(false);
@@ -167,6 +177,7 @@ const VendorDashboard = () => {
         mSnapshot.forEach(doc => {
           if (doc.id === 'motivos') setMotivos(doc.data()?.list || []);
           if (doc.id === 'extraordinary_motives') setExtraordinaryMotives(doc.data()?.list || []);
+          if (doc.id === 'expense_types') setExpenseTypes(doc.data()?.list || ['Egreso General']);
         });
       } catch (mErr) {
         console.warn("Motivos fetch warning:", mErr);
@@ -679,6 +690,121 @@ const VendorDashboard = () => {
     }
   };
 
+  // --- STANDALONE PRODUCT PURCHASES (HASTA 40 ITEMS) ---
+  const addProductToPurchaseCart = (product, qty, costPrice) => {
+    if (purchaseCart.length >= 40) {
+      return alert("No se pueden agregar más de 40 productos por compra.");
+    }
+    const q = parseInt(qty, 10) || 1;
+    const unitPrice = parseFloat(costPrice) || product.costPrice || Math.round((product.price || 0) * 0.8 * 100) / 100;
+    
+    setPurchaseCart(prev => {
+      const existingIndex = prev.findIndex(item => item.productId === product.id);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        updated[existingIndex].qty += q;
+        updated[existingIndex].unitCostPrice = unitPrice;
+        return updated;
+      }
+      return [...prev, {
+        productId: product.id,
+        productName: product.name,
+        qty: q,
+        unitCostPrice: unitPrice
+      }];
+    });
+  };
+
+  const removeProductFromPurchaseCart = (productId) => {
+    setPurchaseCart(prev => prev.filter(item => item.productId !== productId));
+  };
+
+  const executeProductPurchase = async (e) => {
+    e.preventDefault();
+    if (purchaseCart.length === 0) return alert("Agrega al menos un producto a la compra.");
+    if (!purchaseForm.description) return alert("Ingresa una descripción de la compra.");
+    if (!activeShift?.id && !isReadOnly) return alert('Debes abrir un turno para registrar compras.');
+
+    const totalAmount = purchaseCart.reduce((sum, item) => sum + (item.qty * item.unitCostPrice), 0);
+    
+    // REGLA CRÍTICA: NO CAJA NEGATIVA EN COMPRAS DEL VENDEDOR
+    if (totalAmount > currentCash) {
+      return alert(`OPERACIÓN RECHAZADA: El monto de la compra (Bs. ${totalAmount.toFixed(2)}) supera el dinero actual en caja (Bs. ${currentCash.toFixed(2)}). No se permite dejar la caja en negativo. Añada un Ingreso Extraordinario si es necesario.`);
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await addDoc(collection(db, "orders"), {
+        type: 'compra_productos',
+        description: purchaseForm.description,
+        supplier: purchaseForm.supplier || '',
+        receiptType: purchaseForm.receiptType,
+        receiptNumber: purchaseForm.receiptNumber,
+        amount: totalAmount,
+        items: purchaseCart,
+        method: 'Efectivo',
+        vendorId: currentUser?.uid || currentUser?.id || 'Vendedor',
+        vendorName: currentUser?.name || currentUser?.email || 'Vendedor',
+        shiftId: activeShift.id,
+        timestamp: serverTimestamp()
+      });
+
+      for (const item of purchaseCart) {
+        const pRef = doc(db, "products", item.productId);
+        await updateDoc(pRef, {
+          stock: increment(item.qty),
+          costPrice: item.unitCostPrice
+        });
+      }
+
+      await logEvent('PRODUCT_PURCHASE', currentUser?.name || currentUser?.email, `Vendedor registró compra de productos: ${purchaseCart.length} ítems por Bs. ${totalAmount.toFixed(2)}`, totalAmount);
+      alert('✅ Compra de productos registrada e inventario actualizado exitosamente.');
+      setPurchaseCart([]);
+      setPurchaseForm({ description: '', receiptType: 'ninguno', receiptNumber: '', supplier: '' });
+      loadInitialData();
+    } catch (err) {
+      console.error(err);
+      alert('Error registrando compra de productos');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- EXTRA INCOME (INGRESO EXTRAORDINARIO) ---
+  const handleExtraIncome = async (e) => {
+    e.preventDefault();
+    if (!activeShift?.id && !isReadOnly) return alert('Debes abrir un turno primero.');
+    const amt = parseFloat(extraIncomeAmount);
+    if (!extraIncomeMotive || isNaN(amt) || amt <= 0) return alert('Complete los datos correctamente.');
+
+    setIsSubmitting(true);
+    try {
+      await addDoc(collection(db, "extra_incomes"), {
+        motive: extraIncomeMotive,
+        amount: amt,
+        method: extraIncomeMethod,
+        note: extraIncomeNote,
+        shiftId: activeShift.id,
+        vendorId: currentUser?.uid || currentUser?.id,
+        vendorName: currentUser?.name || currentUser?.email,
+        timestamp: serverTimestamp()
+      });
+      await logEvent('EXTRA_INCOME', currentUser?.name || currentUser?.email, `Ingreso extraordinario: ${extraIncomeMotive} (Bs. ${amt.toFixed(2)}) vía ${extraIncomeMethod}`);
+      alert('Ingreso extraordinario registrado correctamente.');
+      setShowExtraIncomeModal(false);
+      setExtraIncomeMotive('');
+      setExtraIncomeAmount('');
+      setExtraIncomeNote('');
+      loadInitialData();
+    } catch (err) {
+      console.error(err);
+      alert('Error al registrar ingreso extraordinario.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // --- ORDERS / EXPENSES LOGIC ---
   const registerOrder = async (e) => {
     e.preventDefault();
@@ -708,7 +834,7 @@ const VendorDashboard = () => {
       });
       await logEvent('ORDER_REGISTERED', currentUser?.name || currentUser?.email, `Registrado ${orderForm.type}: ${orderForm.description} por Bs. ${amt.toFixed(2)}`);
       alert('Registro guardado con éxito');
-      setOrderForm({ type: 'pedido', description: '', amount: '', receiptType: 'ninguno', receiptNumber: '' });
+      setOrderForm({ type: expenseTypes[0] || 'Servicios Básicos', description: '', amount: '', receiptType: 'ninguno', receiptNumber: '' });
       loadInitialData();
     } catch(e) {
       alert('Error guardando registro');
@@ -845,7 +971,10 @@ const VendorDashboard = () => {
           <ShieldAlert size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Reportar Pérdidas
         </div>
         <div className={`tab ${activeTab === 'orders' ? 'active' : ''}`} onClick={() => setActiveTab('orders')}>
-          <Send size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Egresos & Compras
+          <Send size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Egresos Varios
+        </div>
+        <div className={`tab ${activeTab === 'purchases' ? 'active' : ''}`} onClick={() => setActiveTab('purchases')}>
+          <Package size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Compra Productos
         </div>
         <div className={`tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
           <History size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Operaciones del Turno
@@ -1118,10 +1247,50 @@ const VendorDashboard = () => {
         </div>
       )}
 
+      {/* EXTRA INCOME MODAL */}
+      {showExtraIncomeModal && (
+        <div className="modal-overlay" onClick={() => setShowExtraIncomeModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="flex-between" style={{marginBottom: '1rem'}}>
+              <h3>Registrar Ingreso Extraordinario</h3>
+              <button className="btn btn-secondary" onClick={() => setShowExtraIncomeModal(false)}>X</button>
+            </div>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
+              Utilice esto para ingresar efectivo (ej. sencillo, devoluciones, capital adicional) que incrementará la caja actual.
+            </p>
+            <form onSubmit={handleExtraIncome} style={{display: 'grid', gap: '1rem'}}>
+              <div className="form-group">
+                <label>Motivo</label>
+                <select className="input-field" value={extraIncomeMotive} onChange={e=>setExtraIncomeMotive(e.target.value)} required>
+                  <option value="">Seleccione Motivo...</option>
+                  {extraordinaryMotives.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Monto (Bs.)</label>
+                <input type="number" step="0.10" className="input-field" value={extraIncomeAmount} onChange={e=>setExtraIncomeAmount(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label>Método</label>
+                <select className="input-field" value={extraIncomeMethod} onChange={e=>setExtraIncomeMethod(e.target.value)}>
+                  <option value="Efectivo">Efectivo (Ingresa a Caja)</option>
+                  <option value="Transferencia">Transferencia / QR (Banco)</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Nota / Detalle (Opcional)</label>
+                <input type="text" className="input-field" value={extraIncomeNote} onChange={e=>setExtraIncomeNote(e.target.value)} placeholder="Ej: Cambio en billetes de 10" />
+              </div>
+              <button type="submit" className="btn btn-success btn-block" disabled={isSubmitting}>Guardar Ingreso</button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* ORDERS / EXPENSES TAB */}
       {activeTab === 'orders' && (
         <div className="card glass-panel" style={{maxWidth: '650px'}}>
-          <h3><Send size={20} /> Registrar Egreso / Compra de Mercadería</h3>
+          <h3><Send size={20} /> Registrar Egreso Varios</h3>
           <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
             Caja Actual Disponible: <strong style={{color: 'var(--primary-color)'}}>Bs. {currentCash.toFixed(2)}</strong>. No se permiten egresos que dejen la caja en negativo.
           </p>
@@ -1130,8 +1299,9 @@ const VendorDashboard = () => {
             <div className="form-group">
               <label>Tipo de Registro</label>
               <select className="input-field" value={orderForm.type} onChange={e=>setOrderForm({...orderForm, type: e.target.value})}>
-                <option value="pedido">Pedido / Encargo</option>
-                <option value="compra">Compra Directa de Mercadería</option>
+                <optgroup label="Tipos de Egreso">
+                  {expenseTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                </optgroup>
               </select>
             </div>
 
@@ -1161,6 +1331,178 @@ const VendorDashboard = () => {
 
             <button type="submit" className="btn btn-primary" style={{gridColumn: 'span 2'}} disabled={isSubmitting || isReadOnly}>Guardar Registro</button>
           </form>
+        </div>
+      )}
+
+      {/* --- STANDALONE PRODUCT PURCHASES TAB --- */}
+      {!isLoading && activeTab === 'purchases' && (
+        <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
+          {/* Left Form */}
+          <div className="card glass-panel">
+            <div className="flex-between" style={{marginBottom: '0.5rem'}}>
+              <h3>🛒 Comprar Productos</h3>
+              <button className="btn btn-success" onClick={() => setShowExtraIncomeModal(true)} style={{fontSize: '0.8rem', padding: '0.3rem 0.6rem'}}>
+                + Ingreso Extraordinario
+              </button>
+            </div>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
+              Caja Actual: <strong style={{color: 'var(--primary-color)'}}>Bs. {currentCash.toFixed(2)}</strong>. Esta compra descontará de tu caja.
+            </p>
+            <form onSubmit={executeProductPurchase}>
+              <div className="form-group">
+                <label>Descripción de la Compra</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ej: Pedido semanal Pil"
+                  value={purchaseForm.description}
+                  onChange={e => setPurchaseForm({...purchaseForm, description: e.target.value})}
+                  required
+                />
+              </div>
+              
+              <div className="form-group">
+                <label>Proveedor (Opcional)</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ej: Pil Andina S.A."
+                  value={purchaseForm.supplier}
+                  onChange={e => setPurchaseForm({...purchaseForm, supplier: e.target.value})}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Tipo Comprobante</label>
+                <select 
+                  className="input-field" 
+                  value={purchaseForm.receiptType} 
+                  onChange={e => setPurchaseForm({...purchaseForm, receiptType: e.target.value})}
+                >
+                  <option value="ninguno">Sin Comprobante / Recibo Simple</option>
+                  <option value="factura">Factura</option>
+                  <option value="recibo">Recibo Oficial</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>N° Comprobante (Opcional)</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ej: 0014029"
+                  value={purchaseForm.receiptNumber}
+                  onChange={e => setPurchaseForm({...purchaseForm, receiptNumber: e.target.value})}
+                />
+              </div>
+
+              <div className="alert" style={{background: 'var(--bg-color)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontWeight: 'bold'}}>
+                  <span>Total Compra:</span>
+                  <span style={{color: 'var(--primary-color)'}}>
+                    Bs. {purchaseCart.reduce((s,i) => s + (i.qty * i.unitCostPrice), 0).toFixed(2)}
+                  </span>
+                </div>
+                <button type="submit" className="btn btn-primary btn-block" disabled={isSubmitting || purchaseCart.length === 0 || isReadOnly}>
+                  Registrar Compra y Descontar
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Right Area: Catalog and Cart */}
+          <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+            
+            {/* The Cart View */}
+            <div className="card glass-panel" style={{flex: 1}}>
+              <h3>📋 Ítems a Comprar ({purchaseCart.length})</h3>
+              {purchaseCart.length === 0 ? (
+                <p style={{color: 'var(--text-secondary)', padding: '1rem', textAlign: 'center'}}>Seleccione productos del catálogo abajo.</p>
+              ) : (
+                <div style={{overflowY: 'auto', maxHeight: '300px'}}>
+                  <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                    <thead>
+                      <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                        <th style={{padding: '0.5rem'}}>Producto</th>
+                        <th style={{padding: '0.5rem'}}>Cant.</th>
+                        <th style={{padding: '0.5rem'}}>Costo Unit. (Bs.)</th>
+                        <th style={{padding: '0.5rem'}}>Subtotal</th>
+                        <th style={{padding: '0.5rem'}}>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {purchaseCart.map(item => (
+                        <tr key={item.productId} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                          <td style={{padding: '0.5rem'}}>{item.productName}</td>
+                          <td style={{padding: '0.5rem'}}>
+                            <input 
+                              type="number" 
+                              min="1" 
+                              value={item.qty} 
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 1;
+                                setPurchaseCart(prev => prev.map(p => p.productId === item.productId ? {...p, qty: val} : p));
+                              }}
+                              style={{width: '60px', padding: '0.25rem'}}
+                            />
+                          </td>
+                          <td style={{padding: '0.5rem'}}>
+                            <input 
+                              type="number" 
+                              min="0"
+                              step="0.1" 
+                              value={item.unitCostPrice} 
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                setPurchaseCart(prev => prev.map(p => p.productId === item.productId ? {...p, unitCostPrice: val} : p));
+                              }}
+                              style={{width: '80px', padding: '0.25rem'}}
+                            />
+                          </td>
+                          <td style={{padding: '0.5rem', fontWeight: 'bold'}}>
+                            {(item.qty * item.unitCostPrice).toFixed(2)}
+                          </td>
+                          <td style={{padding: '0.5rem'}}>
+                            <button className="btn btn-secondary" style={{padding: '0.25rem 0.5rem'}} onClick={() => removeProductFromPurchaseCart(item.productId)}>
+                              <X size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Catalog Selector */}
+            <div className="card glass-panel" style={{flex: 1}}>
+              <div className="flex-between" style={{marginBottom: '1rem'}}>
+                <h3>📦 Selector de Productos</h3>
+                <div style={{display: 'flex', gap: '0.5rem'}}>
+                  <input type="text" className="input-field" placeholder="Buscar producto..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} style={{maxWidth: '150px', padding: '0.35rem'}} />
+                  <select className="input-field" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)} style={{maxWidth: '120px', padding: '0.35rem'}}>
+                    {categoriesList.map(c => <option key={c} value={c}>{c === 'todas' ? 'Todas' : c}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem', maxHeight: '400px', overflowY: 'auto'}}>
+                {posProducts.map(p => {
+                  const estCost = p.costPrice !== undefined ? p.costPrice : Math.round((p.price || 0) * 0.8 * 100)/100;
+                  return (
+                    <div key={p.id} onClick={() => addProductToPurchaseCart(p, 1, estCost)} style={{padding: '0.75rem', background: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '0.25rem', transition: 'all 0.15s'}} className="hover-scale">
+                      <strong style={{fontSize: '0.85rem', lineHeight: '1.2'}}>{p.name}</strong>
+                      <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
+                        <span>Stock: {p.stock}</span>
+                        <span>Costo: {estCost.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+          </div>
         </div>
       )}
 
