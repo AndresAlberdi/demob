@@ -7,6 +7,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { parseAndUploadCSV } from '../utils/csvParser';
 import { exportToCSV } from '../utils/csvExporter';
 import { logEvent } from '../utils/logger';
+import Navbar from '../components/Navbar';
 
 const formatDate = (val) => {
   if (!val) return '-';
@@ -151,6 +152,33 @@ const AdminDashboard = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [editPinValue, setEditPinValue] = useState('');
 
+  // NEW FEATURES STATES:
+  // 1. Expense Types ABM
+  const [expenseTypes, setExpenseTypes] = useState(['Servicios Básicos', 'Alquiler', 'Mantenimiento', 'Insumos de Limpieza', 'Honorarios', 'Otros Egresos']);
+  const [newExpenseType, setNewExpenseType] = useState('');
+
+  // 2. Extraordinary Motives ABM
+  const [extraordinaryMotives, setExtraordinaryMotives] = useState(['Préstamo de Funcionario', 'Sobrante de Caja', 'Aporte de Capital', 'Otro Ingreso Extraordinario']);
+  const [newExtraordinaryMotive, setNewExtraordinaryMotive] = useState('');
+
+  // 3. Standalone Product Purchase Module (up to 40 items)
+  const [purchaseForm, setPurchaseForm] = useState({
+    description: '',
+    receiptType: 'recibo', // factura, recibo, ninguno
+    receiptNumber: '',
+    supplier: ''
+  });
+  const [purchaseCart, setPurchaseCart] = useState([]); // [{ productId, productName, qty, unitCostPrice }]
+
+  // 4. Vendor Losses & Fines System
+  const [fineHistory, setFineHistory] = useState([]);
+  const [assignFineForm, setAssignFineForm] = useState({
+    vendorId: '',
+    productId: '',
+    qty: 1,
+    reason: ''
+  });
+
   useEffect(() => {
     loadData();
   }, [currentUser]);
@@ -159,7 +187,7 @@ const AdminDashboard = () => {
     setIsLoading(true);
     try {
       const [
-        pSnap, catSnap, uSnap, mSnap, lSnap, sSnap, shSnap, oSnap, loanSnap, extraSnap, logSnap
+        pSnap, catSnap, uSnap, mSnap, lSnap, sSnap, shSnap, oSnap, loanSnap, extraSnap, logSnap, expTypeSnap, extMotSnap, finesSnap
       ] = await Promise.allSettled([
         getDocs(query(collection(db, "products"))),
         getDoc(doc(db, "settings", "categories")),
@@ -171,12 +199,20 @@ const AdminDashboard = () => {
         getDocs(query(collection(db, "orders"))),
         getDocs(query(collection(db, "loans"))),
         getDocs(query(collection(db, "extra_incomes"))),
-        getDocs(query(collection(db, "system_logs")))
+        getDocs(query(collection(db, "system_logs"))),
+        getDoc(doc(db, "settings", "expense_types")),
+        getDoc(doc(db, "settings", "extraordinary_motives")),
+        getDocs(query(collection(db, "vendor_fines")))
       ]);
 
       let loadedProds = [];
       if (pSnap.status === 'fulfilled') {
-        loadedProds = pSnap.value.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+        loadedProds = pSnap.value.docs.map(d => ({
+          id: d.id, 
+          ...d.data(),
+          minStock: d.data().minStock !== undefined ? d.data().minStock : 3,
+          costPrice: d.data().costPrice !== undefined ? d.data().costPrice : Math.round((d.data().price || 0) * 0.8 * 100) / 100
+        })).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
         setProducts(loadedProds);
       }
 
@@ -198,6 +234,19 @@ const AdminDashboard = () => {
       
       if (mSnap.status === 'fulfilled' && mSnap.value.exists()) {
         setMotivos(mSnap.value.data().list || []);
+      }
+
+      if (expTypeSnap.status === 'fulfilled' && expTypeSnap.value.exists()) {
+        setExpenseTypes(expTypeSnap.value.data().list || []);
+      }
+
+      if (extMotSnap.status === 'fulfilled' && extMotSnap.value.exists()) {
+        setExtraordinaryMotives(extMotSnap.value.data().list || []);
+      }
+
+      if (finesSnap.status === 'fulfilled') {
+        const fList = finesSnap.value.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+        setFineHistory(fList);
       }
       
       if (lSnap.status === 'fulfilled') {
@@ -524,6 +573,243 @@ const AdminDashboard = () => {
     loadData();
   };
 
+  // --- ABM TIPOS DE EGRESOS ---
+  const addExpenseType = async (e) => {
+    e.preventDefault();
+    if (!newExpenseType.trim()) return;
+    const name = newExpenseType.trim();
+    try {
+      const updated = Array.from(new Set([...expenseTypes, name]));
+      await setDoc(doc(db, "settings", "expense_types"), { list: updated });
+      await logEvent('EXPENSE_TYPE_CREATED', currentUser?.email, `Creado nuevo tipo de egreso: "${name}"`);
+      setNewExpenseType('');
+      loadData();
+    } catch (err) {
+      alert("Error guardando tipo de egreso");
+    }
+  };
+
+  const deleteExpenseType = async (item) => {
+    if (!window.confirm(`¿Eliminar el tipo de egreso "${item}"?`)) return;
+    try {
+      const updated = expenseTypes.filter(t => t !== item);
+      await setDoc(doc(db, "settings", "expense_types"), { list: updated });
+      await logEvent('EXPENSE_TYPE_DELETED', currentUser?.email, `Eliminado tipo de egreso: "${item}"`);
+      loadData();
+    } catch (err) {
+      alert("Error eliminando tipo de egreso");
+    }
+  };
+
+  // --- ABM MOTIVOS INGRESOS EXTRAORDINARIOS ---
+  const addExtraordinaryMotive = async (e) => {
+    e.preventDefault();
+    if (!newExtraordinaryMotive.trim()) return;
+    const name = newExtraordinaryMotive.trim();
+    try {
+      const updated = Array.from(new Set([...extraordinaryMotives, name]));
+      await setDoc(doc(db, "settings", "extraordinary_motives"), { list: updated });
+      await logEvent('EXTRAORDINARY_MOTIVE_CREATED', currentUser?.email, `Creado nuevo motivo extraordinario: "${name}"`);
+      setNewExtraordinaryMotive('');
+      loadData();
+    } catch (err) {
+      alert("Error guardando motivo extraordinario");
+    }
+  };
+
+  const deleteExtraordinaryMotive = async (item) => {
+    if (!window.confirm(`¿Eliminar el motivo extraordinario "${item}"?`)) return;
+    try {
+      const updated = extraordinaryMotives.filter(m => m !== item);
+      await setDoc(doc(db, "settings", "extraordinary_motives"), { list: updated });
+      await logEvent('EXTRAORDINARY_MOTIVE_DELETED', currentUser?.email, `Eliminado motivo extraordinario: "${item}"`);
+      loadData();
+    } catch (err) {
+      alert("Error eliminando motivo");
+    }
+  };
+
+  // --- STANDALONE PRODUCT PURCHASES (HASTA 40 ITEMS) ---
+  const addProductToPurchaseCart = (product, qty, costPrice) => {
+    if (purchaseCart.length >= 40) {
+      return alert("No se pueden agregar más de 40 productos por compra.");
+    }
+    const q = parseInt(qty, 10) || 1;
+    const unitPrice = parseFloat(costPrice) || product.costPrice || Math.round((product.price || 0) * 0.8 * 100) / 100;
+    
+    setPurchaseCart(prev => {
+      const existingIndex = prev.findIndex(item => item.productId === product.id);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        updated[existingIndex].qty += q;
+        updated[existingIndex].unitCostPrice = unitPrice;
+        return updated;
+      }
+      return [...prev, {
+        productId: product.id,
+        productName: product.name,
+        qty: q,
+        unitCostPrice: unitPrice
+      }];
+    });
+  };
+
+  const removeProductFromPurchaseCart = (productId) => {
+    setPurchaseCart(prev => prev.filter(item => item.productId !== productId));
+  };
+
+  const executeProductPurchase = async (e) => {
+    e.preventDefault();
+    if (purchaseCart.length === 0) return alert("Agrega al menos un producto a la compra.");
+    if (!purchaseForm.description) return alert("Ingresa una descripción de la compra.");
+
+    const totalAmount = purchaseCart.reduce((sum, item) => sum + (item.qty * item.unitCostPrice), 0);
+    setIsLoading(true);
+
+    try {
+      await addDoc(collection(db, "orders"), {
+        type: 'compra_productos',
+        description: purchaseForm.description,
+        supplier: purchaseForm.supplier || '',
+        receiptType: purchaseForm.receiptType,
+        receiptNumber: purchaseForm.receiptNumber,
+        amount: totalAmount,
+        items: purchaseCart,
+        method: 'Efectivo',
+        registeredBy: currentUser?.email || 'Admin',
+        timestamp: serverTimestamp()
+      });
+
+      for (const item of purchaseCart) {
+        const pRef = doc(db, "products", item.productId);
+        await updateDoc(pRef, {
+          stock: increment(item.qty),
+          costPrice: item.unitCostPrice
+        });
+      }
+
+      await logEvent('PRODUCT_PURCHASE', currentUser?.email, `Registrada compra de productos: ${purchaseCart.length} ítems por Bs. ${totalAmount.toFixed(2)}`, totalAmount);
+      alert('✅ Compra de productos registrada e inventario actualizado exitosamente.');
+      setPurchaseCart([]);
+      setPurchaseForm({ description: '', receiptType: 'recibo', receiptNumber: '', supplier: '' });
+      loadData();
+    } catch (err) {
+      console.error(err);
+      alert('Error registrando compra de productos');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- VENDOR LOSSES & FINES SYSTEM ---
+  const assignVendorFine = async (e) => {
+    e.preventDefault();
+    if (!assignFineForm.vendorId || !assignFineForm.productId) return alert("Selecciona vendedor y producto.");
+    const qty = parseInt(assignFineForm.qty, 10) || 1;
+    const product = products.find(p => p.id === assignFineForm.productId);
+    const vendor = appUsers.find(u => u.id === assignFineForm.vendorId);
+    if (!product || !vendor) return alert("Vendedor o producto no encontrado.");
+
+    const purchasePrice = product.costPrice || Math.round((product.price || 0) * 0.8 * 100) / 100;
+    const fineAmount = qty * purchasePrice;
+
+    setIsLoading(true);
+    try {
+      await addDoc(collection(db, "vendor_fines"), {
+        vendorId: vendor.id,
+        vendorName: vendor.name,
+        productId: product.id,
+        productName: product.name,
+        qty,
+        purchasePrice,
+        fineAmount,
+        reason: assignFineForm.reason || 'Pérdida de producto',
+        status: 'pending',
+        timestamp: serverTimestamp()
+      });
+
+      const uRef = doc(db, "app_users", vendor.id);
+      await updateDoc(uRef, {
+        accumulatedFines: increment(fineAmount)
+      });
+
+      await logEvent('VENDOR_FINE_ASSIGNED', currentUser?.email, `Asignada multa a vendor "${vendor.name}": ${qty}x ${product.name} (Bs. ${fineAmount.toFixed(2)})`);
+      alert(`Multa de Bs. ${fineAmount.toFixed(2)} asignada exitosamente a ${vendor.name}`);
+      setAssignFineForm({ vendorId: '', productId: '', qty: 1, reason: '' });
+      loadData();
+    } catch (err) {
+      console.error(err);
+      alert("Error asignando multa a vendedor");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const collectVendorFine = async (vendor) => {
+    const amountToCollect = vendor.accumulatedFines || 0;
+    if (amountToCollect <= 0) return alert("Este vendedor no tiene multas pendientes por cobrar.");
+
+    if (!window.confirm(`¿Cobrar multa total de Bs. ${amountToCollect.toFixed(2)} al vendedor ${vendor.name}? El saldo acumulado se reiniciará a 0 y se registrará el ingreso en efectivo.`)) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await updateDoc(doc(db, "app_users", vendor.id), {
+        accumulatedFines: 0
+      });
+
+      await addDoc(collection(db, "sales"), {
+        items: [{ id: 'fine_collection', name: `Cobro de Multa: ${vendor.name}`, qty: 1, price: amountToCollect }],
+        total: amountToCollect,
+        method: 'Efectivo',
+        cashPaid: amountToCollect,
+        qrPaid: 0,
+        vendorId: vendor.id,
+        vendorName: vendor.name,
+        isFineCollection: true,
+        timestamp: serverTimestamp()
+      });
+
+      const fSnap = await getDocs(query(collection(db, "vendor_fines"), where("vendorId", "==", vendor.id), where("status", "==", "pending")));
+      for (const fDoc of fSnap.docs) {
+        await updateDoc(doc(db, "vendor_fines", fDoc.id), {
+          status: 'collected',
+          collectedAt: serverTimestamp()
+        });
+      }
+
+      await logEvent('VENDOR_FINE_COLLECTED', currentUser?.email, `Cobrada multa de Bs. ${amountToCollect.toFixed(2)} a ${vendor.name}`, amountToCollect);
+      alert(`✅ Cobro de multa por Bs. ${amountToCollect.toFixed(2)} registrado exitosamente.`);
+      loadData();
+    } catch (err) {
+      console.error(err);
+      alert("Error al cobrar multa a vendedor");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- UPDATE PRODUCT COST PRICE & MIN STOCK ---
+  const handleUpdateProductCostAndMinStock = async (productId, newCostPrice, newMinStock) => {
+    const cost = parseFloat(newCostPrice);
+    const minSt = parseInt(newMinStock, 10);
+
+    if (isNaN(cost) || cost < 0) return alert("Precio de compra inválido");
+    if (isNaN(minSt) || minSt < 0) return alert("Stock mínimo inválido");
+
+    try {
+      await updateDoc(doc(db, "products", productId), {
+        costPrice: cost,
+        minStock: minSt
+      });
+      await logEvent('PRODUCT_COST_MINSTOCK_UPDATED', currentUser?.email, `Actualizado precio compra (Bs. ${cost.toFixed(2)}) y stock mín (${minSt}) para producto ID ${productId}`);
+      loadData();
+    } catch (err) {
+      alert("Error actualizando datos del producto");
+    }
+  };
+
   // --- SHIFT CONTROL WITH CASH ENTRY ---
   const forceCloseShift = async (shiftId, vendorName) => {
     const cashInput = window.prompt(`Ingrese el dinero físico contado en caja para cerrar el turno de ${vendorName}:`, '0');
@@ -692,55 +978,72 @@ const AdminDashboard = () => {
   }
 
   return (
-    <div className="dashboard-layout">
-      <div className="dashboard-header flex-between">
-        <div>
-          <h2>Panel de Administración</h2>
-          <p>Administrador: {currentUser?.email}</p>
-          {activeShiftDoc && (
-            <div style={{marginTop: '0.5rem'}}>
-              <span style={{
-                background: 'linear-gradient(135deg, #10b981, #059669)',
-                color: 'white',
-                padding: '0.35rem 0.85rem',
-                borderRadius: '20px',
-                fontWeight: '700',
-                fontSize: '0.9rem',
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
-              }}>
-                💵 Caja Actual (Turno Activo: {activeShiftDoc.vendorName}): Bs. {activeShiftCash.toFixed(2)}
-              </span>
-            </div>
-          )}
+    <div style={{ minHeight: '100vh' }}>
+      <Navbar />
+
+      <div className="dashboard-layout">
+        <div className="dashboard-header flex-between" style={{ flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h2>⚙️ Panel de Administración - Racquet La Estación</h2>
+            <p>Administrador: {currentUser?.email}</p>
+            {activeShiftDoc && (
+              <div style={{marginTop: '0.5rem'}}>
+                <span style={{
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  color: 'white',
+                  padding: '0.35rem 0.85rem',
+                  borderRadius: '20px',
+                  fontWeight: '700',
+                  fontSize: '0.9rem',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                }}>
+                  💵 Caja Actual (Turno Activo: {activeShiftDoc.vendorName}): Bs. {activeShiftCash.toFixed(2)}
+                </span>
+              </div>
+            )}
+          </div>
+          <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap'}}>
+            <button className="btn btn-secondary" onClick={() => navigate('/supervisor')}>
+              📋 Vista Supervisor
+            </button>
+            <Link to="/vendedor?from=admin" className="btn btn-primary" onClick={() => localStorage.setItem('user_role', 'admin')}>
+              🛒 Ir a POS
+            </Link>
+          </div>
         </div>
-        <div style={{display: 'flex', gap: '1rem'}}>
-          <Link to="/vendedor?from=admin" className="btn btn-secondary" onClick={() => localStorage.setItem('user_role', 'admin')}>Ir a POS</Link>
-          <button className="btn btn-danger" onClick={handleLogout}>
-            <LogOut size={18} /> Salir
-          </button>
+        
+        <div className="tabs" style={{flexWrap: 'wrap'}}>
+          <div className={`tab ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}>
+            <BarChart3 size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Reportes Financieros
+          </div>
+          <div className={`tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>
+            <Package size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Inventario ({products.length})
+          </div>
+          <div className={`tab ${activeTab === 'purchases' ? 'active' : ''}`} onClick={() => setActiveTab('purchases')}>
+            🛒 Compra de Productos
+          </div>
+          <div className={`tab ${activeTab === 'expense_types' ? 'active' : ''}`} onClick={() => setActiveTab('expense_types')}>
+            📋 Tipos de Egresos ({expenseTypes.length})
+          </div>
+          <div className={`tab ${activeTab === 'extraordinary_motives' ? 'active' : ''}`} onClick={() => setActiveTab('extraordinary_motives')}>
+            💵 Motivos Ingresos Extra ({extraordinaryMotives.length})
+          </div>
+          <div className={`tab ${activeTab === 'vendor_fines' ? 'active' : ''}`} onClick={() => setActiveTab('vendor_fines')}>
+            ⚖️ Multas a Vendedores ({appUsers.reduce((sum, u) => sum + (u.accumulatedFines || 0), 0) > 0 ? 'Con pendientes' : 'Al día'})
+          </div>
+          <div className={`tab ${activeTab === 'shifts' ? 'active' : ''}`} onClick={() => setActiveTab('shifts')}>
+            <Clock size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Turnos
+          </div>
+          <div className={`tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
+            <Users size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Vendedores ({appUsers.length})
+          </div>
+          <div className={`tab ${activeTab === 'losses' ? 'active' : ''}`} onClick={() => setActiveTab('losses')}>
+            <ShieldAlert size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Pérdidas ({pendingLosses.length})
+          </div>
+          <div className={`tab ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
+            <FileText size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Logs
+          </div>
         </div>
-      </div>
-      
-      <div className="tabs" style={{flexWrap: 'wrap'}}>
-        <div className={`tab ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}>
-          <BarChart3 size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Reportes Financieros
-        </div>
-        <div className={`tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>
-          <Package size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Inventario & Productos
-        </div>
-        <div className={`tab ${activeTab === 'shifts' ? 'active' : ''}`} onClick={() => setActiveTab('shifts')}>
-          <Clock size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Seguimiento de Turnos
-        </div>
-        <div className={`tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
-          <Users size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Vendedores
-        </div>
-        <div className={`tab ${activeTab === 'losses' ? 'active' : ''}`} onClick={() => setActiveTab('losses')}>
-          <ShieldAlert size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Pérdidas & Ajustes ({pendingLosses.length})
-        </div>
-        <div className={`tab ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
-          <FileText size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Logs del Sistema
-        </div>
-      </div>
       
       {isLoading && <div className="flex-center" style={{padding: '2rem'}}>Cargando...</div>}
       
@@ -1307,8 +1610,10 @@ const AdminDashboard = () => {
                 <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
                   <th style={{padding: '0.5rem'}}>Producto (Descripción)</th>
                   <th style={{padding: '0.5rem'}}>Categoría</th>
-                  <th style={{padding: '0.5rem'}}>Precio (Bs.)</th>
-                  <th style={{padding: '0.5rem'}}>Stock</th>
+                  <th style={{padding: '0.5rem'}}>Precio Venta (Bs.)</th>
+                  <th style={{padding: '0.5rem'}}>Precio Compra (Bs.)</th>
+                  <th style={{padding: '0.5rem'}}>Stock Actual</th>
+                  <th style={{padding: '0.5rem'}}>Stock Mínimo</th>
                   <th style={{padding: '0.5rem', textAlign: 'center'}}>Acciones</th>
                 </tr>
               </thead>
@@ -1328,8 +1633,16 @@ const AdminDashboard = () => {
                   })
                   .map(p => {
                     const isEditing = editingProduct === p.id;
+                    const minStockVal = p.minStock !== undefined ? p.minStock : 3;
+                    const defaultCost = p.costPrice !== undefined ? p.costPrice : Math.round((p.price || 0) * 0.8 * 100) / 100;
+                    const isLowStock = (p.stock || 0) <= minStockVal;
+
                     return (
-                      <tr key={p.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                      <tr 
+                        key={p.id} 
+                        className={isLowStock ? "min-stock-row" : ""} 
+                        style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}
+                      >
                         <td style={{padding: '0.5rem'}}>
                           {isEditing ? (
                             <input 
@@ -1339,7 +1652,7 @@ const AdminDashboard = () => {
                               onChange={e => setEditProdForm({...editProdForm, name: e.target.value})} 
                             />
                           ) : (
-                            <span style={{fontWeight: '500'}}>{p.name}</span>
+                            <span style={{fontWeight: '600'}}>{p.name}</span>
                           )}
                         </td>
                         <td style={{padding: '0.5rem'}}>
@@ -1373,15 +1686,42 @@ const AdminDashboard = () => {
                           {isEditing ? (
                             <input 
                               type="number" 
+                              step="0.10"
+                              className="input-field" 
+                              style={{width: '90px'}}
+                              value={editProdForm.costPrice !== undefined ? editProdForm.costPrice : defaultCost} 
+                              onChange={e => setEditProdForm({...editProdForm, costPrice: e.target.value})} 
+                            />
+                          ) : (
+                            <span style={{fontWeight: 'bold', color: 'var(--text-muted)'}}>Bs. {parseFloat(defaultCost).toFixed(2)}</span>
+                          )}
+                        </td>
+                        <td style={{padding: '0.5rem'}}>
+                          {isEditing ? (
+                            <input 
+                              type="number" 
                               className="input-field" 
                               style={{width: '80px'}}
                               value={editProdForm.stock} 
                               onChange={e => setEditProdForm({...editProdForm, stock: e.target.value})} 
                             />
                           ) : (
-                            <span style={{fontWeight: 'bold', color: p.stock <= 0 ? 'var(--danger)' : 'inherit'}}>
-                              {p.stock !== undefined ? p.stock : 0}
+                            <span style={{fontWeight: 'bold', color: isLowStock ? '#e7716d' : 'inherit'}}>
+                              {p.stock !== undefined ? p.stock : 0} {isLowStock && '⚠️'}
                             </span>
+                          )}
+                        </td>
+                        <td style={{padding: '0.5rem'}}>
+                          {isEditing ? (
+                            <input 
+                              type="number" 
+                              className="input-field" 
+                              style={{width: '70px'}}
+                              value={editProdForm.minStock !== undefined ? editProdForm.minStock : minStockVal} 
+                              onChange={e => setEditProdForm({...editProdForm, minStock: e.target.value})} 
+                            />
+                          ) : (
+                            <span style={{fontWeight: 'bold'}}>{minStockVal}</span>
                           )}
                         </td>
                         <td style={{padding: '0.5rem', textAlign: 'center'}}>
@@ -1392,7 +1732,14 @@ const AdminDashboard = () => {
                             </div>
                           ) : (
                             <div style={{display: 'flex', gap: '0.5rem', justifyContent: 'center'}}>
-                              <button className="btn btn-secondary" style={{padding: '0.25rem 0.5rem'}} onClick={() => startEditProduct(p)}>
+                              <button className="btn btn-secondary" style={{padding: '0.25rem 0.5rem'}} onClick={() => {
+                                startEditProduct(p);
+                                setEditProdForm(prev => ({
+                                  ...prev,
+                                  costPrice: defaultCost,
+                                  minStock: minStockVal
+                                }));
+                              }}>
                                 Editar
                               </button>
                               <button className="btn btn-danger" style={{padding: '0.25rem 0.5rem'}} onClick={() => softDeleteProduct(p.id, p.name)}>
@@ -1404,6 +1751,409 @@ const AdminDashboard = () => {
                       </tr>
                     );
                   })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* --- STANDALONE PRODUCT PURCHASES TAB --- */}
+      {!isLoading && activeTab === 'purchases' && (
+        <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
+          {/* Left Form */}
+          <div className="card glass-panel">
+            <h3>🛒 Datos de la Compra</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
+              El registro incrementará automáticamente el stock de los productos seleccionados.
+            </p>
+            <form onSubmit={executeProductPurchase}>
+              <div className="form-group">
+                <label>Descripción de la Compra</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ej: Reabastecimiento de Sodas y Bebidas..."
+                  value={purchaseForm.description} 
+                  onChange={e => setPurchaseForm({...purchaseForm, description: e.target.value})} 
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Proveedor / Nota (Opcional)</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ej: Distribuidora Central S.R.L."
+                  value={purchaseForm.supplier} 
+                  onChange={e => setPurchaseForm({...purchaseForm, supplier: e.target.value})} 
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Tipo de Comprobante</label>
+                <select 
+                  className="input-field" 
+                  value={purchaseForm.receiptType} 
+                  onChange={e => setPurchaseForm({...purchaseForm, receiptType: e.target.value})}
+                >
+                  <option value="factura">Factura</option>
+                  <option value="recibo">Recibo</option>
+                  <option value="ninguno">Sin Comprobante</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Nro. de Comprobante</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ej: FAC-84930"
+                  value={purchaseForm.receiptNumber} 
+                  onChange={e => setPurchaseForm({...purchaseForm, receiptNumber: e.target.value})} 
+                />
+              </div>
+
+              <div style={{padding: '1rem', background: 'rgba(39, 108, 211, 0.1)', borderRadius: '10px', marginBottom: '1.5rem'}}>
+                <span style={{fontSize: '0.9rem', color: 'var(--text-secondary)'}}>Total de la Compra:</span>
+                <div style={{fontSize: '1.6rem', fontWeight: '800', color: 'var(--primary-color)'}}>
+                  Bs. {purchaseCart.reduce((sum, item) => sum + (item.qty * item.unitCostPrice), 0).toFixed(2)}
+                </div>
+                <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
+                  {purchaseCart.length} de 40 productos seleccionados
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                className="btn btn-primary btn-block" 
+                disabled={purchaseCart.length === 0}
+              >
+                💾 Confirmar Compra & Aumentar Stock
+              </button>
+            </form>
+          </div>
+
+          {/* Right Product Selector & Cart */}
+          <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+            <div className="card glass-panel">
+              <h3>Seleccionar Productos (Máx. 40 ítems)</h3>
+              <div style={{overflowY: 'auto', maxHeight: '280px', marginTop: '0.5rem'}}>
+                <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                  <thead>
+                    <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                      <th style={{padding: '0.5rem'}}>Producto</th>
+                      <th style={{padding: '0.5rem'}}>Precio Compra</th>
+                      <th style={{padding: '0.5rem'}}>Cant. a Comprar</th>
+                      <th style={{padding: '0.5rem', textAlign: 'center'}}>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products.filter(p => !p.isDeleted).map(p => {
+                      const defaultCost = p.costPrice !== undefined ? p.costPrice : Math.round((p.price || 0) * 0.8 * 100) / 100;
+                      return (
+                        <tr key={p.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                          <td style={{padding: '0.5rem', fontWeight: '600'}}>{p.name}</td>
+                          <td style={{padding: '0.5rem'}}>
+                            Bs. {defaultCost.toFixed(2)}
+                          </td>
+                          <td style={{padding: '0.5rem'}}>
+                            <input 
+                              type="number" 
+                              min="1" 
+                              id={`qty-inp-${p.id}`} 
+                              defaultValue="1" 
+                              className="input-field" 
+                              style={{width: '70px', padding: '0.2rem'}}
+                            />
+                          </td>
+                          <td style={{padding: '0.5rem', textAlign: 'center'}}>
+                            <button 
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => {
+                                const qtyInp = document.getElementById(`qty-inp-${p.id}`);
+                                addProductToPurchaseCart(p, qtyInp?.value || 1, defaultCost);
+                              }}
+                            >
+                              + Agregar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Purchase Cart Table */}
+            <div className="card glass-panel">
+              <h3>Ítems en la Compra Actual ({purchaseCart.length})</h3>
+              {purchaseCart.length === 0 ? (
+                <p style={{color: 'var(--text-secondary)', padding: '1rem', textAlign: 'center'}}>
+                  No has agregado productos a esta compra aún.
+                </p>
+              ) : (
+                <table style={{width: '100%', borderCollapse: 'collapse', marginTop: '0.5rem'}}>
+                  <thead>
+                    <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                      <th style={{padding: '0.5rem'}}>Producto</th>
+                      <th style={{padding: '0.5rem'}}>Cantidad</th>
+                      <th style={{padding: '0.5rem'}}>Costo Unitario</th>
+                      <th style={{padding: '0.5rem'}}>Subtotal</th>
+                      <th style={{padding: '0.5rem', textAlign: 'center'}}>Quitar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {purchaseCart.map(item => (
+                      <tr key={item.productId} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                        <td style={{padding: '0.5rem', fontWeight: '600'}}>{item.productName}</td>
+                        <td style={{padding: '0.5rem'}}>{item.qty} u.</td>
+                        <td style={{padding: '0.5rem'}}>Bs. {item.unitCostPrice.toFixed(2)}</td>
+                        <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {(item.qty * item.unitCostPrice).toFixed(2)}</td>
+                        <td style={{padding: '0.5rem', textAlign: 'center'}}>
+                          <button 
+                            className="btn btn-danger btn-sm" 
+                            onClick={() => removeProductFromPurchaseCart(item.productId)}
+                          >
+                            <X size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ABM TIPOS DE EGRESOS TAB --- */}
+      {!isLoading && activeTab === 'expense_types' && (
+        <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
+          <div className="card glass-panel">
+            <h3>Nuevo Tipo de Egreso</h3>
+            <form onSubmit={addExpenseType}>
+              <div className="form-group">
+                <label>Nombre del Tipo de Egreso</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ej: Mantenimiento de Canchas" 
+                  value={newExpenseType} 
+                  onChange={e => setNewExpenseType(e.target.value)} 
+                  required 
+                />
+              </div>
+              <button type="submit" className="btn btn-primary btn-block">Agregar Tipo de Egreso</button>
+            </form>
+          </div>
+
+          <div className="card glass-panel">
+            <h3>Tipos de Egresos Registrados ({expenseTypes.length})</h3>
+            <div className="item-list">
+              {expenseTypes.map((item, idx) => (
+                <div key={idx} className="list-item" style={{padding: '0.75rem 1rem'}}>
+                  <span style={{fontWeight: '600'}}>{item}</span>
+                  <button className="btn btn-danger btn-sm" onClick={() => deleteExpenseType(item)}>
+                    <X size={14} /> Eliminar
+                  </button>
+                </div>
+              ))}
+              {expenseTypes.length === 0 && (
+                <p style={{color: 'var(--text-secondary)'}}>No se han registrado tipos de egresos aún.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ABM MOTIVOS INGRESOS EXTRAORDINARIOS TAB --- */}
+      {!isLoading && activeTab === 'extraordinary_motives' && (
+        <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
+          <div className="card glass-panel">
+            <h3>Nuevo Motivo de Ingreso Extraordinario</h3>
+            <form onSubmit={addExtraordinaryMotive}>
+              <div className="form-group">
+                <label>Nombre del Motivo</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Ej: Auspicio Evento" 
+                  value={newExtraordinaryMotive} 
+                  onChange={e => setNewExtraordinaryMotive(e.target.value)} 
+                  required 
+                />
+              </div>
+              <button type="submit" className="btn btn-primary btn-block">Agregar Motivo</button>
+            </form>
+          </div>
+
+          <div className="card glass-panel">
+            <h3>Motivos Registrados ({extraordinaryMotives.length})</h3>
+            <div className="item-list">
+              {extraordinaryMotives.map((item, idx) => (
+                <div key={idx} className="list-item" style={{padding: '0.75rem 1rem'}}>
+                  <span style={{fontWeight: '600'}}>{item}</span>
+                  <button className="btn btn-danger btn-sm" onClick={() => deleteExtraordinaryMotive(item)}>
+                    <X size={14} /> Eliminar
+                  </button>
+                </div>
+              ))}
+              {extraordinaryMotives.length === 0 && (
+                <p style={{color: 'var(--text-secondary)'}}>No se han registrado motivos extraordinarios aún.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MULTAS Y PÉRDIDAS VENDEDORES TAB --- */}
+      {!isLoading && activeTab === 'vendor_fines' && (
+        <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+          <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
+            {/* Form Assign Fine */}
+            <div className="card glass-panel">
+              <h3>⚖️ Asignar Multa por Pérdida a Vendedor</h3>
+              <form onSubmit={assignVendorFine}>
+                <div className="form-group">
+                  <label>Seleccionar Vendedor</label>
+                  <select 
+                    className="input-field" 
+                    value={assignFineForm.vendorId} 
+                    onChange={e => setAssignFineForm({...assignFineForm, vendorId: e.target.value})} 
+                    required
+                  >
+                    <option value="">-- Seleccionar --</option>
+                    {appUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Seleccionar Producto Perdido</label>
+                  <select 
+                    className="input-field" 
+                    value={assignFineForm.productId} 
+                    onChange={e => setAssignFineForm({...assignFineForm, productId: e.target.value})} 
+                    required
+                  >
+                    <option value="">-- Seleccionar --</option>
+                    {products.filter(p => !p.isDeleted).map(p => {
+                      const cost = p.costPrice || Math.round((p.price || 0) * 0.8 * 100) / 100;
+                      return <option key={p.id} value={p.id}>{p.name} (Bs. {cost.toFixed(2)} cost)</option>;
+                    })}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Cantidad Perdida</label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    className="input-field" 
+                    value={assignFineForm.qty} 
+                    onChange={e => setAssignFineForm({...assignFineForm, qty: e.target.value})} 
+                    required 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Motivo / Observación</label>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    placeholder="Ej: Producto roto en turno" 
+                    value={assignFineForm.reason} 
+                    onChange={e => setAssignFineForm({...assignFineForm, reason: e.target.value})} 
+                  />
+                </div>
+
+                <button type="submit" className="btn btn-primary btn-block">Asignar Multa</button>
+              </form>
+            </div>
+
+            {/* Accumulated Fines Summary */}
+            <div className="card glass-panel">
+              <h3>💰 Saldo Acumulado de Multas por Vendedor</h3>
+              <table style={{width: '100%', borderCollapse: 'collapse', marginTop: '1rem'}}>
+                <thead>
+                  <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                    <th style={{padding: '0.5rem'}}>Vendedor</th>
+                    <th style={{padding: '0.5rem'}}>Multas Acumuladas Pendientes</th>
+                    <th style={{padding: '0.5rem', textAlign: 'center'}}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {appUsers.map(vendor => {
+                    const accumulated = vendor.accumulatedFines || 0;
+                    return (
+                      <tr key={vendor.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                        <td style={{padding: '0.5rem', fontWeight: '700'}}>{vendor.name}</td>
+                        <td style={{padding: '0.5rem', fontWeight: '800', color: accumulated > 0 ? '#e7716d' : '#10b981'}}>
+                          Bs. {accumulated.toFixed(2)}
+                        </td>
+                        <td style={{padding: '0.5rem', textAlign: 'center'}}>
+                          <button 
+                            className="btn btn-primary btn-sm" 
+                            disabled={accumulated <= 0}
+                            onClick={() => collectVendorFine(vendor)}
+                          >
+                            💵 Cobrar Multa
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Histórico de Multas */}
+          <div className="card glass-panel">
+            <h3>📜 Histórico de Multas (Nuevas Primero)</h3>
+            <table style={{width: '100%', borderCollapse: 'collapse', marginTop: '1rem'}}>
+              <thead>
+                <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
+                  <th style={{padding: '0.5rem'}}>Fecha</th>
+                  <th style={{padding: '0.5rem'}}>Vendedor</th>
+                  <th style={{padding: '0.5rem'}}>Producto</th>
+                  <th style={{padding: '0.5rem'}}>Cantidad</th>
+                  <th style={{padding: '0.5rem'}}>Precio Compra</th>
+                  <th style={{padding: '0.5rem'}}>Monto Multa</th>
+                  <th style={{padding: '0.5rem'}}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fineHistory.map(fine => {
+                  const dateStr = fine.timestamp?.seconds ? new Date(fine.timestamp.seconds * 1000).toLocaleString() : 'Reciente';
+                  const isCollected = fine.status === 'collected';
+                  return (
+                    <tr key={fine.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
+                      <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{dateStr}</td>
+                      <td style={{padding: '0.5rem', fontWeight: '600'}}>{fine.vendorName}</td>
+                      <td style={{padding: '0.5rem'}}>{fine.productName}</td>
+                      <td style={{padding: '0.5rem'}}>{fine.qty} u.</td>
+                      <td style={{padding: '0.5rem'}}>Bs. {(fine.purchasePrice || 0).toFixed(2)}</td>
+                      <td style={{padding: '0.5rem', fontWeight: '800', color: '#e7716d'}}>Bs. {(fine.fineAmount || 0).toFixed(2)}</td>
+                      <td style={{padding: '0.5rem'}}>
+                        {isCollected ? (
+                          <span className="badge badge-success">✓ Cobrada</span>
+                        ) : (
+                          <span className="badge badge-error">Pendiente</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {fineHistory.length === 0 && (
+                  <tr>
+                    <td colSpan="7" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>
+                      No hay historial de multas registrado.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1675,6 +2425,7 @@ const AdminDashboard = () => {
         </div>
       )}
 
+      </div>
     </div>
   );
 };

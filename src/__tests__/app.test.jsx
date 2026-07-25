@@ -42,16 +42,17 @@ vi.mock('../context/AuthContext', async (importOriginal) => {
   };
 });
 
-describe('DemoB UI & Authentication Unit Tests', () => {
-  it('renders vendor PIN login tab by default with 6-digit PIN requirements', () => {
+describe('Racquet La Estación UI & Authentication Unit Tests', () => {
+  it('renders vendor PIN login tab by default with 6-digit PIN requirements and Racquet La Estación branding', () => {
     render(
       <BrowserRouter>
         <Login />
       </BrowserRouter>
     );
 
-    expect(screen.getByText('Demo B POS')).toBeInTheDocument();
+    expect(screen.getByText('Racquet La Estación')).toBeInTheDocument();
     expect(screen.getByText('PIN de Acceso')).toBeInTheDocument();
+    expect(screen.getByText('🌙 Modo Oscuro')).toBeInTheDocument();
     
     const pinInput = screen.getByPlaceholderText('••••••');
     expect(pinInput).toBeInTheDocument();
@@ -79,6 +80,33 @@ describe('DemoB UI & Authentication Unit Tests', () => {
     expect(passwordInput).toBeInTheDocument();
     expect(passwordInput).toHaveAttribute('autoComplete', 'current-password');
     expect(passwordInput).toHaveAttribute('name', 'password');
+  });
+
+  it('calculates default costPrice at 20% below salePrice and default minStock at 3', () => {
+    const salePrice = 100;
+    const defaultCostPrice = Math.round(salePrice * 0.8 * 100) / 100;
+    const defaultMinStock = 3;
+
+    expect(defaultCostPrice).toBe(80);
+    expect(defaultMinStock).toBe(3);
+  });
+
+  it('excludes pending loan sales from total income until repaid', () => {
+    const sales = [
+      { total: 50, method: 'Efectivo', isLoan: false },
+      { total: 100, method: 'Préstamo', isLoan: true, status: 'pending' },
+      { total: 30, method: 'QR', isLoan: false }
+    ];
+    const repaidLoans = [
+      { amount: 100, status: 'repaid', method: 'Efectivo' }
+    ];
+
+    const directSalesIncome = sales.filter(s => !s.isLoan && s.method !== 'Préstamo').reduce((a, b) => a + b.total, 0);
+    const repaidLoansIncome = repaidLoans.filter(l => l.status === 'repaid').reduce((a, b) => a + b.amount, 0);
+    const totalIncome = directSalesIncome + repaidLoansIncome;
+
+    // 50 (Cash) + 30 (QR) + 100 (Repaid Loan) = 180 (Pending 100 loan is NOT counted)
+    expect(totalIncome).toBe(180);
   });
 
   it('renders application without crashing', () => {

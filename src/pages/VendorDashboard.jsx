@@ -6,6 +6,7 @@ import { Search, ShoppingCart, LogOut, Package, CreditCard, Banknote, Coffee, Hi
 import { useNavigate } from 'react-router-dom';
 import { exportToCSV } from '../utils/csvExporter';
 import { logEvent } from '../utils/logger';
+import Navbar from '../components/Navbar';
 
 const HelpTooltip = ({ title, text, example }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -120,6 +121,13 @@ const VendorDashboard = () => {
   // Vendor Self PIN Change State
   const [showPinModal, setShowPinModal] = useState(false);
   const [newVendorPin, setNewVendorPin] = useState('');
+
+  // Ingresos Extraordinarios Modal State
+  const [showExtraIncomeModal, setShowExtraIncomeModal] = useState(false);
+  const [extraIncomeMotive, setExtraIncomeMotive] = useState('');
+  const [extraIncomeAmount, setExtraIncomeAmount] = useState('');
+  const [extraIncomeMethod, setExtraIncomeMethod] = useState('Efectivo');
+  const [extraIncomeNote, setExtraIncomeNote] = useState('');
 
   const isAdmin = userRole === 'admin' ||
                   currentUser?.role === 'admin' || 
@@ -583,6 +591,63 @@ const VendorDashboard = () => {
     }
   };
 
+  // --- INGRESOS EXTRAORDINARIOS LOGIC ---
+  const registerExtraordinaryIncome = async (e) => {
+    e.preventDefault();
+    const amt = parseFloat(extraIncomeAmount) || 0;
+    if (amt <= 0) return alert('Ingrese un monto válido mayor a 0');
+    if (!extraIncomeMotive) return alert('Seleccione un motivo');
+    if (!activeShift?.id && !isReadOnly) return alert('Debes abrir un turno para registrar ingresos extraordinarios.');
+
+    setIsSubmitting(true);
+    try {
+      let cashPaid = amt;
+      let qrPaid = 0;
+
+      if (extraIncomeMethod === 'QR') {
+        cashPaid = 0;
+        qrPaid = amt;
+      } else if (extraIncomeMethod === 'MIXTO') {
+        cashPaid = parseFloat(mixtoCashInput) || 0;
+        qrPaid = Math.max(0, amt - cashPaid);
+        if (cashPaid < 0 || cashPaid > amt) {
+          alert(`El monto en efectivo debe estar entre Bs. 0 y Bs. ${amt.toFixed(2)}`);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      await addDoc(collection(db, "sales"), {
+        items: [{ id: 'extraordinary_income', name: `Ingreso Extraordinario: ${extraIncomeMotive}`, qty: 1, price: amt }],
+        total: amt,
+        method: extraIncomeMethod,
+        cashPaid,
+        qrPaid,
+        motive: extraIncomeMotive,
+        note: extraIncomeNote || '',
+        vendorId: currentUser?.uid || currentUser?.id || 'Vendedor',
+        vendorName: currentUser?.name || currentUser?.email || 'Vendedor',
+        shiftId: activeShift.id,
+        timestamp: serverTimestamp(),
+        isExtraordinaryIncome: true
+      });
+
+      await logEvent('EXTRAORDINARY_INCOME', currentUser?.name || currentUser?.email, `Ingreso Extraordinario registrado: ${extraIncomeMotive} por Bs. ${amt.toFixed(2)} (${extraIncomeMethod})`, amt);
+      alert('Ingreso extraordinario registrado correctamente');
+      setShowExtraIncomeModal(false);
+      setExtraIncomeMotive('');
+      setExtraIncomeAmount('');
+      setExtraIncomeNote('');
+      setMixtoCashInput('');
+      loadInitialData();
+    } catch (err) {
+      console.error("Error registrando ingreso extraordinario:", err);
+      alert('Error registrando ingreso extraordinario');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // --- LOSSES LOGIC ---
   const registerLoss = async (e) => {
     e.preventDefault();
@@ -679,34 +744,24 @@ const VendorDashboard = () => {
   if (isLoading) return <div className="flex-center" style={{height: '100vh'}}><Coffee className="spinner" size={48} /></div>;
 
   return (
-    <div className="dashboard-layout">
-      {/* HEADER BAR */}
-      <div className="dashboard-header flex-between">
-        <div>
-          <h2>Terminal de Ventas (POS)</h2>
-          <p>Operador: {currentUser?.name || currentUser?.email || 'Vendedor'}</p>
-        </div>
-        <div style={{display: 'flex', gap: '0.75rem', alignItems: 'center'}}>
-          <button className="btn btn-secondary" onClick={() => setShowPinModal(true)}>
-            Cambiar Mi PIN
-          </button>
-          
-          {/* BOTÓN REQUERIDO: VOLVER A ADMIN SI ES USUARIO ADMIN */}
-          {isAdmin && (
-            <button 
-              className="btn flex-center" 
-              onClick={() => navigate('/admin')} 
-              style={{gap: '0.5rem', background: '#2563eb', color: '#ffffff', fontWeight: 'bold', borderRadius: '8px', padding: '0.5rem 1rem'}}
-            >
-              <ArrowLeft size={18} /> Volver a Admin
-            </button>
-          )}
+    <div style={{ minHeight: '100vh' }}>
+      <Navbar />
 
-          <button className="btn btn-danger" onClick={handleLogout}>
-            <LogOut size={18} /> Salir
-          </button>
+      <div className="dashboard-layout">
+        <div className="dashboard-header flex-between" style={{ flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h2>🛒 Terminal de Ventas (POS) - Racquet La Estación</h2>
+            <p>Operador: {currentUser?.name || currentUser?.email || 'Vendedor'}</p>
+          </div>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={() => setShowExtraIncomeModal(true)}>
+              ➕ Ingreso Extraordinario
+            </button>
+            <button className="btn btn-secondary" onClick={() => setShowPinModal(true)}>
+              🔒 Cambiar Mi PIN
+            </button>
+          </div>
         </div>
-      </div>
 
       {/* GLOBAL READ ONLY BANNER */}
       {isReadOnly && (
@@ -836,21 +891,28 @@ const VendorDashboard = () => {
 
             {/* Product Grid (Hides zero stock and deleted items) */}
             <div className="item-grid" style={{maxHeight: '520px', overflowY: 'auto'}}>
-              {posProducts.map(p => (
-                <div 
-                  key={p.id} 
-                  className={`card item-card ${p.stock <= 0 ? 'out-of-stock' : ''}`}
-                  onClick={() => addToCart(p)}
-                  style={{cursor: isReadOnly || p.stock <= 0 ? 'not-allowed' : 'pointer'}}
-                >
-                  <h4 style={{fontSize: '1rem', marginBottom: '0.25rem'}}>{p.name}</h4>
-                  <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
-                    <span>Tipo: {p.category}</span>
-                    <span>Stock: {p.stock}</span>
+              {posProducts.map(p => {
+                const minStockVal = p.minStock !== undefined ? p.minStock : 3;
+                const isCritical = (p.stock || 0) <= minStockVal;
+                return (
+                  <div 
+                    key={p.id} 
+                    className={`card item-card ${p.stock <= 0 ? 'out-of-stock' : ''} ${isCritical ? 'min-stock' : ''}`}
+                    onClick={() => addToCart(p)}
+                    style={{cursor: isReadOnly || p.stock <= 0 ? 'not-allowed' : 'pointer'}}
+                  >
+                    <h4 style={{fontSize: '1rem', marginBottom: '0.25rem'}}>{p.name}</h4>
+                    <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)'}}>
+                      <span>Tipo: {p.category}</span>
+                      <span>Stock: {p.stock}</span>
+                    </div>
+                    {isCritical && (
+                      <span className="min-stock-alert">⚠️ Stock mín: {p.stock} disp.</span>
+                    )}
+                    <span className="item-action" style={{fontSize: '1.1rem'}}>Bs. {(parseFloat(p.price) || 0).toFixed(2)}</span>
                   </div>
-                  <span className="item-action" style={{fontSize: '1.1rem'}}>Bs. {(parseFloat(p.price) || 0).toFixed(2)}</span>
-                </div>
-              ))}
+                );
+              })}
               {posProducts.length === 0 && (
                 <div style={{gridColumn: '1 / -1', textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem'}}>
                   No hay productos disponibles con estos filtros o sin stock.
@@ -1274,6 +1336,97 @@ const VendorDashboard = () => {
         </div>
       )}
 
+      {/* MODAL INGRESOS EXTRAORDINARIOS */}
+      {showExtraIncomeModal && (
+        <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000}}>
+          <div className="card glass-panel" style={{width: '90%', maxWidth: '420px', padding: '1.5rem', background: '#ffffff', color: '#1a2433'}}>
+            <h3 style={{marginBottom: '0.5rem', color: 'var(--primary-color)'}}>
+              ➕ Registrar Ingreso Extraordinario
+            </h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
+              Préstamos de funcionarios, sobrantes de caja, etc.
+            </p>
+
+            <form onSubmit={registerExtraordinaryIncome}>
+              <div className="form-group" style={{marginBottom: '1rem'}}>
+                <label style={{fontWeight: 'bold'}}>Motivo del Ingreso</label>
+                <select 
+                  className="input-field" 
+                  value={extraIncomeMotive} 
+                  onChange={e => setExtraIncomeMotive(e.target.value)} 
+                  required
+                >
+                  <option value="">-- Seleccionar Motivo --</option>
+                  {motivos.length > 0 ? (
+                    motivos.map((m, idx) => <option key={idx} value={typeof m === 'string' ? m : m.name}>{typeof m === 'string' ? m : m.name}</option>)
+                  ) : (
+                    <>
+                      <option value="Préstamo de Funcionario">Préstamo de Funcionario</option>
+                      <option value="Sobrante de Caja">Sobrante de Caja</option>
+                      <option value="Aporte de Capital">Aporte de Capital</option>
+                      <option value="Otro Ingreso Extraordinario">Otro Ingreso Extraordinario</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <div className="form-group" style={{marginBottom: '1rem'}}>
+                <label style={{fontWeight: 'bold'}}>Monto Total (Bs.)</label>
+                <input 
+                  type="number" 
+                  step="0.10" 
+                  min="0.10" 
+                  className="input-field" 
+                  placeholder="0.00" 
+                  value={extraIncomeAmount} 
+                  onChange={e => setExtraIncomeAmount(e.target.value)} 
+                  required 
+                />
+              </div>
+
+              <div className="form-group" style={{marginBottom: '1rem'}}>
+                <label style={{fontWeight: 'bold'}}>Método de Pago</label>
+                <select className="input-field" value={extraIncomeMethod} onChange={e => setExtraIncomeMethod(e.target.value)}>
+                  <option value="Efectivo">💵 Efectivo</option>
+                  <option value="QR">📱 QR / Transferencia Banco</option>
+                  <option value="MIXTO">💳 Pago Mixto (Efectivo + QR)</option>
+                </select>
+              </div>
+
+              {extraIncomeMethod === 'MIXTO' && (
+                <div className="form-group" style={{marginBottom: '1rem'}}>
+                  <label style={{fontWeight: 'bold'}}>Monto en EFECTIVO (Bs.)</label>
+                  <input 
+                    type="number" 
+                    step="0.10" 
+                    className="input-field" 
+                    placeholder="Ej: 20.00" 
+                    value={mixtoCashInput} 
+                    onChange={e => setMixtoCashInput(e.target.value)} 
+                  />
+                </div>
+              )}
+
+              <div className="form-group" style={{marginBottom: '1.5rem'}}>
+                <label style={{fontWeight: 'bold'}}>Nota / Descripción (Opcional)</label>
+                <input 
+                  type="text" 
+                  className="input-field" 
+                  placeholder="Detalles adicionales..." 
+                  value={extraIncomeNote} 
+                  onChange={e => setExtraIncomeNote(e.target.value)} 
+                />
+              </div>
+
+              <div style={{display: 'flex', gap: '0.5rem', justifyContent: 'flex-end'}}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowExtraIncomeModal(false)}>Cancelar</button>
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>Guardar Ingreso</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   );
 };

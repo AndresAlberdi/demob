@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import VendorDashboard from './pages/VendorDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+import SupervisorDashboard from './pages/SupervisorDashboard';
 import './index.css';
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -14,8 +15,9 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   }
   
   if (allowedRoles && !allowedRoles.includes(userRole)) {
-    // Redirect based on role if they try to access something they shouldn't
-    return <Navigate to={userRole === 'admin' ? '/admin' : '/vendedor'} replace />;
+    if (userRole === 'admin') return <Navigate to="/admin" replace />;
+    if (userRole === 'supervisor') return <Navigate to="/supervisor" replace />;
+    return <Navigate to="/vendedor" replace />;
   }
   
   return children;
@@ -24,8 +26,8 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 const HomeRedirect = () => {
   const { currentUser, userRole } = useAuth();
   if (!currentUser) return <Navigate to="/login" replace />;
-  // If loading role, we might want to wait, but assuming it loads fast enough:
   if (userRole === 'admin') return <Navigate to="/admin" replace />;
+  if (userRole === 'supervisor') return <Navigate to="/supervisor" replace />;
   return <Navigate to="/vendedor" replace />;
 };
 
@@ -41,6 +43,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['vendedor', 'admin']}>
                 <VendorDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/supervisor/*" 
+            element={
+              <ProtectedRoute allowedRoles={['supervisor', 'admin']}>
+                <SupervisorDashboard />
               </ProtectedRoute>
             } 
           />

@@ -14,8 +14,18 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
-  const [userRole, setUserRole] = useState(null); // 'admin' or 'vendedor'
+  const [userRole, setUserRole] = useState(null); // 'admin', 'supervisor' or 'vendedor'
   const [loading, setLoading] = useState(true);
+  const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'light');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('app_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -122,7 +132,9 @@ export const AuthProvider = ({ children }) => {
     userRole,
     login,
     loginWithPin,
-    logout
+    logout,
+    theme,
+    toggleTheme
   };
 
   return (

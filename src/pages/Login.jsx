@@ -11,7 +11,7 @@ const Login = () => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const { login, loginWithPin } = useAuth();
+  const { login, loginWithPin, theme, toggleTheme } = useAuth();
   const navigate = useNavigate();
 
   const handleEmailSubmit = async (e) => {
@@ -47,14 +47,20 @@ const Login = () => {
   };
 
   return (
-    <div className="auth-container">
+    <div className="auth-container" style={{ position: 'relative' }}>
+      <div style={{ position: 'absolute', top: '1.5rem', right: '1.5rem' }}>
+        <button onClick={toggleTheme} className="theme-toggle-btn">
+          {theme === 'dark' ? '☀️ Modo Claro' : '🌙 Modo Oscuro'}
+        </button>
+      </div>
+
       <div className="auth-card glass-panel">
         <div className="auth-header">
-          <div className="logo-container">
-            <Store className="logo-icon" size={48} />
+          <div className="logo-container" style={{ background: 'transparent', boxShadow: 'none' }}>
+            <img src="/logo-racquet.jpeg" alt="Racquet La Estación Logo" style={{ width: '80px', height: '80px', borderRadius: '18px', objectFit: 'cover', border: '3px solid #0a137c' }} />
           </div>
-          <h1>Demo B POS</h1>
-          <p>Sistema de Ventas e Inventarios</p>
+          <h1>Racquet La Estación</h1>
+          <p>Sistema de Control, Inventario & POS</p>
         </div>
         
         <div className="tabs" style={{marginBottom: '1.5rem'}}>

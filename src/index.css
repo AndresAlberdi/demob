@@ -1,25 +1,77 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-:root {
-  /* Color Palette */
-  --primary-color: #4f46e5;
-  --primary-hover: #4338ca;
-  --secondary-color: #10b981;
-  --bg-color: #f3f4f6;
-  --surface-color: rgba(255, 255, 255, 0.85);
-  --text-primary: #1f2937;
-  --text-secondary: #6b7280;
-  --danger-color: #ef4444;
-  --border-color: rgba(229, 231, 235, 0.5);
+:root, [data-theme="light"] {
+  /* Color Palette - Racquet La Estación */
+  --color-principal: #0a137c;
+  --color-secundario-blue: #276cd3;
+  --color-secundario-yellow: #f3d92e;
+  --color-alert-red: #e7716d;
+  
+  --primary-color: #0a137c;
+  --primary-hover: #276cd3;
+  --secondary-color: #276cd3;
+  --accent-yellow: #f3d92e;
+  --bg-color: #f4f6fb;
+  --surface-color: #ffffff;
+  --card-bg: rgba(255, 255, 255, 0.95);
+  --text-primary: #0a137c;
+  --text-body: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --danger-color: #e7716d;
+  --border-color: #cbd5e1;
   
   /* Glassmorphism */
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.5);
-  --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  --glass-bg: rgba(255, 255, 255, 0.92);
+  --glass-border: rgba(10, 19, 124, 0.15);
+  --glass-shadow: 0 8px 32px 0 rgba(10, 19, 124, 0.08);
+  
+  /* Form inputs & dropdowns */
+  --input-bg: #ffffff;
+  --input-text: #0f172a;
+  --input-border: #cbd5e1;
+  --dropdown-bg: #ffffff;
+  --dropdown-text: #0f172a;
+  --dropdown-hover: #e0e8f9;
   
   /* Metrics */
   --border-radius: 16px;
-  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="dark"] {
+  /* Color Palette - Racquet La Estación (Dark Mode) */
+  --color-principal: #0a137c;
+  --color-secundario-blue: #276cd3;
+  --color-secundario-yellow: #f3d92e;
+  --color-alert-red: #e7716d;
+  
+  --primary-color: #276cd3;
+  --primary-hover: #3b82f6;
+  --secondary-color: #f3d92e;
+  --accent-yellow: #f3d92e;
+  --bg-color: #05081c;
+  --surface-color: #0c1445;
+  --card-bg: rgba(12, 20, 69, 0.92);
+  --text-primary: #ffffff;
+  --text-body: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --danger-color: #e7716d;
+  --border-color: rgba(39, 108, 211, 0.3);
+  
+  /* Glassmorphism */
+  --glass-bg: rgba(10, 19, 124, 0.65);
+  --glass-border: rgba(39, 108, 211, 0.35);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  
+  /* Form inputs & dropdowns */
+  --input-bg: #0d174d;
+  --input-text: #ffffff;
+  --input-border: #276cd3;
+  --dropdown-bg: #0a123d;
+  --dropdown-text: #ffffff;
+  --dropdown-hover: #1b2d80;
 }
 
 * {
@@ -481,3 +533,163 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================
+   APP NAVBAR & BRANDING
+   ========================================== */
+.app-navbar {
+  background: var(--surface-color);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(10px);
+  padding: 0.75rem 1.5rem;
+}
+
+.navbar-container {
+  max-width: 1300px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.navbar-logo {
+  height: 42px;
+  width: 42px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 2px solid var(--primary-color);
+  box-shadow: 0 2px 8px rgba(10, 19, 124, 0.2);
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.brand-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.user-info-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  background: rgba(39, 108, 211, 0.1);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  font-size: 0.85rem;
+}
+
+.user-email {
+  font-weight: 600;
+  color: var(--text-body);
+}
+
+.role-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  text-transform: uppercase;
+}
+
+.theme-toggle-btn {
+  background: var(--input-bg);
+  color: var(--text-body);
+  border: 1px solid var(--input-border);
+  padding: 0.4rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.theme-toggle-btn:hover {
+  border-color: var(--primary-color);
+  transform: scale(1.03);
+}
+
+.role-switcher-group {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.btn-sm {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.82rem;
+  border-radius: 8px;
+}
+
+.btn-logout {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.btn-logout:hover {
+  opacity: 0.9;
+}
+
+/* HIGH-CONTRAST DROPDOWNS & SELECTS */
+select, .input-field, input[type="text"], input[type="number"], input[type="password"] {
+  background-color: var(--input-bg) !important;
+  color: var(--input-text) !important;
+  border: 1px solid var(--input-border) !important;
+  font-family: inherit;
+}
+
+select option {
+  background-color: var(--dropdown-bg) !important;
+  color: var(--dropdown-text) !important;
+  padding: 0.5rem;
+}
+
+select option:hover, select option:focus {
+  background-color: var(--dropdown-hover) !important;
+}
+
+/* STOCK MINIMUM ALERT BADGES */
+.min-stock-alert {
+  color: var(--color-alert-red) !important;
+  font-weight: 700;
+  font-size: 0.78rem;
+  display: inline-block;
+  margin-top: 0.25rem;
+}
+
+.item-card.min-stock {
+  border: 2px solid var(--color-alert-red) !important;
+  background: rgba(231, 113, 109, 0.08) !important;
+}
+
+.min-stock-row {
+  background-color: rgba(231, 113, 109, 0.12) !important;
+  color: var(--color-alert-red) !important;
+}
+
