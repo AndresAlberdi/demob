@@ -113,6 +113,7 @@ const AdminDashboard = () => {
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
   const [reportSubTab, setReportSubTab] = useState('all'); // all, losses, loans, orders, extra
+  const [lossSubTab, setLossSubTab] = useState('pending'); // pending, history
 
   // CSV Form State
   const [csvHasHeader, setCsvHasHeader] = useState(true);
@@ -219,12 +220,18 @@ const AdminDashboard = () => {
 
       let loadedProds = [];
       if (pSnap.status === 'fulfilled') {
-        loadedProds = pSnap.value.docs.map(d => ({
-          id: d.id, 
-          ...d.data(),
-          minStock: d.data().minStock !== undefined ? d.data().minStock : 3,
-          costPrice: d.data().costPrice !== undefined ? d.data().costPrice : Math.round((d.data().price || 0) * 0.8 * 100) / 100
-        })).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+        loadedProds = pSnap.value.docs.map(d => {
+          const data = d.data();
+          const parsedPrice = parseFloat(data.price) || 0;
+          return {
+            ...data,
+            id: d.id,
+            price: parsedPrice,
+            stock: data.stock !== undefined ? parseInt(data.stock, 10) : 0,
+            minStock: data.minStock !== undefined && data.minStock !== "" ? parseInt(data.minStock, 10) : 3,
+            costPrice: data.costPrice !== undefined && data.costPrice !== "" ? parseFloat(data.costPrice) : Math.round(parsedPrice * 0.8 * 100) / 100
+          };
+        }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
         setProducts(loadedProds);
       }
 
@@ -803,7 +810,7 @@ const AdminDashboard = () => {
     const amountToCollect = vendor.accumulatedFines || 0;
     if (amountToCollect <= 0) return alert("Este vendedor no tiene multas pendientes por cobrar.");
 
-    if (!window.confirm(`¿Cobrar multa total de Bs. ${amountToCollect.toFixed(2)} al vendedor ${vendor.name}? El saldo acumulado se reiniciará a 0 y se registrará el ingreso en efectivo.`)) {
+    if (!window.confirm(`¿Cobrar multa total de Bs. ${amountToCollect.toFixed(2)} al vendedor ${vendor.name}? El saldo acumulado se reiniciará a 0 y se registrará por cuenta separada.`)) {
       return;
     }
 
@@ -813,15 +820,10 @@ const AdminDashboard = () => {
         accumulatedFines: 0
       });
 
-      await addDoc(collection(db, "sales"), {
-        items: [{ id: 'fine_collection', name: `Cobro de Multa: ${vendor.name}`, qty: 1, price: amountToCollect }],
-        total: amountToCollect,
-        method: 'Efectivo',
-        cashPaid: amountToCollect,
-        qrPaid: 0,
+      await addDoc(collection(db, "fine_payments"), {
         vendorId: vendor.id,
         vendorName: vendor.name,
-        isFineCollection: true,
+        amount: amountToCollect,
         timestamp: serverTimestamp()
       });
 
@@ -833,7 +835,7 @@ const AdminDashboard = () => {
         });
       }
 
-      await logEvent('VENDOR_FINE_COLLECTED', currentUser?.email, `Cobrada multa de Bs. ${amountToCollect.toFixed(2)} a ${vendor.name}`, amountToCollect);
+      await logEvent('VENDOR_FINE_COLLECTED', currentUser?.email, `Cobrada multa de Bs. ${amountToCollect.toFixed(2)} a ${vendor.name} (Por cuenta separada de la caja)`, amountToCollect);
       alert(`✅ Cobro de multa por Bs. ${amountToCollect.toFixed(2)} registrado exitosamente.`);
       loadData();
     } catch (err) {
@@ -2644,105 +2646,130 @@ const AdminDashboard = () => {
 
       {/* --- LOSSES & ADJUSTMENTS TAB --- */}
       {!isLoading && activeTab === 'losses' && (
-        <div className="dashboard-grid" style={{gridTemplateColumns: '2fr 1fr'}}>
-          <div className="card glass-panel">
-            <h3>Aprobación de Pérdidas y Robos ({pendingLosses.length})</h3>
-            <div className="item-list">
-              {pendingLosses.map(loss => (
-                <div key={loss.id} className="list-item" style={{flexDirection: 'column', alignItems: 'flex-start'}}>
-                  <div className="flex-between" style={{width: '100%', marginBottom: '0.5rem'}}>
-                    <h4>{loss.qty}x {loss.productName}</h4>
-                    <span className="badge badge-error">{loss.reason}</span>
-                  </div>
-                  {loss.isAggregatedAuditLoss && Array.isArray(loss.items) && (
-                    <div style={{ background: 'rgba(0,0,0,0.03)', padding: '0.5rem', borderRadius: '8px', width: '100%', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                        <span>Detalle de productos faltantes:</span>
-                        <span style={{ color: 'var(--danger-color)' }}>
-                          Valor Total Costo: Bs. {calculateBlockLossTotalCost(loss).toFixed(2)}
-                        </span>
-                      </div>
-                      <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0 }}>
-                        {loss.items.map(item => {
-                          const cost = parseFloat(item.costPrice) || parseFloat(products.find(p => p.id === item.productId || p.name === item.productName)?.costPrice) || 0;
-                          return (
-                            <li key={item.productId}>
-                              {item.qty}x {item.productName} (Bs. {cost.toFixed(2)} c/u - Total: Bs. {(cost * item.qty).toFixed(2)})
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  )}
-                  <div className="flex-between" style={{width: '100%'}}>
-                    <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
-                      Vendedor: {loss.vendorName || '-'} | Fecha: {formatDate(loss.timestamp)}
-                    </p>
-                    <div style={{display: 'flex', gap: '0.5rem'}}>
-                      <button className="btn btn-success" onClick={() => handleLoss(loss.id, true)}>Aprobar y Descontar</button>
-                      <button className="btn btn-danger" onClick={() => handleLoss(loss.id, false)}>Rechazar</button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {pendingLosses.length === 0 && <p style={{color: 'var(--text-secondary)', padding: '1rem', textAlign: 'center'}}>No hay pérdidas pendientes de revisión.</p>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* Subtabs for Losses */}
+          <div className="tab-container" style={{ marginBottom: 0 }}>
+            <div 
+              className={`tab ${lossSubTab === 'pending' ? 'active' : ''}`} 
+              onClick={() => setLossSubTab('pending')}
+            >
+              ⏳ Aprobaciones Pendientes ({pendingLosses.length})
             </div>
-            
-            <h3 style={{marginTop: '2rem'}}>📜 Histórico de Pérdidas Procesadas</h3>
-            <div className="item-list" style={{maxHeight: '300px'}}>
-              {allLosses.filter(l => l.status !== 'pending').map(loss => (
-                <div key={loss.id} className="list-item" style={{flexDirection: 'column', alignItems: 'flex-start', opacity: 0.8}}>
-                  <div className="flex-between" style={{width: '100%', marginBottom: '0.5rem'}}>
-                    <h4>{loss.qty}x {loss.productName}</h4>
-                    <span className={`badge ${loss.status === 'approved' ? 'badge-success' : 'badge-error'}`}>
-                      {loss.status === 'approved' ? 'Aprobado/Descontado' : 'Rechazado'}
-                    </span>
-                  </div>
-                  {loss.isAggregatedAuditLoss && Array.isArray(loss.items) && (
-                    <div style={{ background: 'rgba(0,0,0,0.03)', padding: '0.5rem', borderRadius: '8px', width: '100%', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                        <span>Detalle de productos:</span>
-                        <span style={{ color: 'var(--text-secondary)' }}>
-                          Valor Total Costo: Bs. {calculateBlockLossTotalCost(loss).toFixed(2)}
-                        </span>
-                      </div>
-                      <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0 }}>
-                        {loss.items.map(item => {
-                          const cost = parseFloat(item.costPrice) || parseFloat(products.find(p => p.id === item.productId || p.name === item.productName)?.costPrice) || 0;
-                          return (
-                            <li key={item.productId}>
-                              {item.qty}x {item.productName} (Bs. {cost.toFixed(2)} c/u - Total: Bs. {(cost * item.qty).toFixed(2)})
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  )}
-                  <div className="flex-between" style={{width: '100%'}}>
-                    <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
-                      Vendedor: {loss.vendorName || '-'} | Motivo: {loss.reason} | Fecha: {formatDate(loss.timestamp)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {allLosses.filter(l => l.status !== 'pending').length === 0 && <p style={{color: 'var(--text-secondary)', padding: '1rem', textAlign: 'center'}}>No hay registro de pérdidas procesadas.</p>}
+            <div 
+              className={`tab ${lossSubTab === 'history' ? 'active' : ''}`} 
+              onClick={() => setLossSubTab('history')}
+            >
+              📜 Historial de Procesadas ({allLosses.filter(l => l.status !== 'pending').length})
             </div>
           </div>
-          
-          <div className="card glass-panel">
-            <h3>Motivos de Pérdida Configurados</h3>
-            <form onSubmit={addMotivo} style={{display: 'flex', gap: '0.5rem', marginBottom: '1rem'}}>
-              <input type="text" className="input-field" value={newMotivo} onChange={e=>setNewMotivo(e.target.value)} placeholder="Ej: Caducado, Vencido..." required/>
-              <button type="submit" className="btn btn-primary">+</button>
-            </form>
-            <div className="item-list">
-              {motivos.map(m => (
-                <div key={m} className="list-item" style={{padding: '0.5rem'}}>
-                  <span>{m}</span>
-                  <button className="btn btn-secondary" style={{padding: '0.2rem 0.5rem'}} onClick={() => deleteMotivo(m)}><X size={14}/></button>
+
+          <div className="dashboard-grid" style={{gridTemplateColumns: '2fr 1fr'}}>
+            {lossSubTab === 'pending' ? (
+              <div className="card glass-panel">
+                <h3>Aprobación de Pérdidas y Robos ({pendingLosses.length})</h3>
+                <div className="item-list">
+                  {pendingLosses.map(loss => (
+                    <div key={loss.id} className="list-item" style={{flexDirection: 'column', alignItems: 'flex-start'}}>
+                      <div className="flex-between" style={{width: '100%', marginBottom: '0.5rem'}}>
+                        <h4>{loss.qty}x {loss.productName}</h4>
+                        <span className="badge badge-error">{loss.reason}</span>
+                      </div>
+                      {loss.isAggregatedAuditLoss && Array.isArray(loss.items) && (
+                        <div style={{ background: 'rgba(0,0,0,0.03)', padding: '0.5rem', borderRadius: '8px', width: '100%', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                            <span>Detalle de productos faltantes:</span>
+                            <span style={{ color: 'var(--danger-color)' }}>
+                              Valor Total Costo: Bs. {calculateBlockLossTotalCost(loss).toFixed(2)}
+                            </span>
+                          </div>
+                          <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0 }}>
+                            {loss.items.map(item => {
+                              const cost = parseFloat(item.costPrice) || parseFloat(products.find(p => p.id === item.productId || p.name === item.productName)?.costPrice) || 0;
+                              return (
+                                <li key={item.productId}>
+                                  {item.qty}x {item.productName} (Bs. {cost.toFixed(2)} c/u - Total: Bs. {(cost * item.qty).toFixed(2)})
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="flex-between" style={{width: '100%'}}>
+                        <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                          Vendedor: {loss.vendorName || '-'} | Fecha: {formatDate(loss.timestamp)}
+                        </p>
+                        <div style={{display: 'flex', gap: '0.5rem'}}>
+                          <button className="btn btn-success" onClick={() => handleLoss(loss.id, true)}>Aprobar y Descontar</button>
+                          <button className="btn btn-danger" onClick={() => handleLoss(loss.id, false)}>Rechazar</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {pendingLosses.length === 0 && <p style={{color: 'var(--text-secondary)', padding: '1rem', textAlign: 'center'}}>No hay pérdidas pendientes de revisión.</p>}
                 </div>
-              ))}
-              {motivos.length === 0 && <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>No se han registrado motivos aún.</p>}
+              </div>
+            ) : (
+              <div className="card glass-panel">
+                <h3>📜 Historial Completo de Pérdidas Procesadas</h3>
+                <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
+                  Detalle de todas las pérdidas y robos aprobados o rechazados históricamente.
+                </p>
+                <div className="item-list" style={{maxHeight: 'none'}}>
+                  {allLosses.filter(l => l.status !== 'pending').map(loss => (
+                    <div key={loss.id} className="list-item" style={{flexDirection: 'column', alignItems: 'flex-start', opacity: 0.9}}>
+                      <div className="flex-between" style={{width: '100%', marginBottom: '0.5rem'}}>
+                        <h4>{loss.qty}x {loss.productName}</h4>
+                        <span className={`badge ${loss.status === 'approved' ? 'badge-success' : 'badge-error'}`}>
+                          {loss.status === 'approved' ? 'Aprobado/Descontado' : 'Rechazado'}
+                        </span>
+                      </div>
+                      {loss.isAggregatedAuditLoss && Array.isArray(loss.items) && (
+                        <div style={{ background: 'rgba(0,0,0,0.03)', padding: '0.5rem', borderRadius: '8px', width: '100%', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                            <span>Detalle de productos:</span>
+                            <span style={{ color: 'var(--text-secondary)' }}>
+                              Valor Total Costo: Bs. {calculateBlockLossTotalCost(loss).toFixed(2)}
+                            </span>
+                          </div>
+                          <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0 }}>
+                            {loss.items.map(item => {
+                              const cost = parseFloat(item.costPrice) || parseFloat(products.find(p => p.id === item.productId || p.name === item.productName)?.costPrice) || 0;
+                              return (
+                                <li key={item.productId}>
+                                  {item.qty}x {item.productName} (Bs. {cost.toFixed(2)} c/u - Total: Bs. {(cost * item.qty).toFixed(2)})
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                      <div className="flex-between" style={{width: '100%'}}>
+                        <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                          Vendedor: {loss.vendorName || '-'} | Motivo: {loss.reason} | Fecha: {formatDate(loss.timestamp)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {allLosses.filter(l => l.status !== 'pending').length === 0 && <p style={{color: 'var(--text-secondary)', padding: '1rem', textAlign: 'center'}}>No hay registro de pérdidas procesadas.</p>}
+                </div>
+              </div>
+            )}
+
+            <div className="card glass-panel">
+              <h3>Motivos de Pérdida Configurados</h3>
+              <form onSubmit={addMotivo} style={{display: 'flex', gap: '0.5rem', marginBottom: '1rem'}}>
+                <input type="text" className="input-field" value={newMotivo} onChange={e=>setNewMotivo(e.target.value)} placeholder="Ej: Caducado, Vencido..." required/>
+                <button type="submit" className="btn btn-primary">+</button>
+              </form>
+              <div className="item-list">
+                {motivos.map(m => (
+                  <div key={m} className="list-item" style={{padding: '0.5rem'}}>
+                    <span>{m}</span>
+                    <button className="btn btn-secondary" style={{padding: '0.2rem 0.5rem'}} onClick={() => deleteMotivo(m)}><X size={14}/></button>
+                  </div>
+                ))}
+                {motivos.length === 0 && <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>No se han registrado motivos aún.</p>}
+              </div>
             </div>
           </div>
         </div>

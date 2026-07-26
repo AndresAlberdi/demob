@@ -160,13 +160,14 @@ const VendorDashboard = () => {
       pSnapshot.forEach(doc => {
         const data = doc.data();
         prods.push({ 
+          ...data,
           id: doc.id, 
           name: data.name || 'Sin nombre',
           category: data.category || 'GENERAL',
           price: parseFloat(data.price) || 0,
           stock: data.stock !== undefined ? parseInt(data.stock) : 0,
-          isDeleted: !!data.isDeleted,
-          ...data 
+          costPrice: data.costPrice !== undefined && data.costPrice !== "" ? parseFloat(data.costPrice) : Math.round((parseFloat(data.price) || 0) * 0.8 * 100) / 100,
+          isDeleted: !!data.isDeleted
         });
       });
       setProducts(prods.sort((a,b) => (a.name || '').localeCompare(b.name || '')));

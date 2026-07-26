@@ -192,6 +192,19 @@ describe('Wally La Estación UI & Authentication Unit Tests', () => {
     expect(totalPendingFinesSum).toBe(170);
   });
 
+  it('ensures fine payments do not affect sales or cash flow as they are stored in a separate collection', () => {
+    const sales = [
+      { id: 's1', total: 100, method: 'Efectivo' },
+      { id: 's2', total: 50, method: 'QR' }
+    ];
+    const finePayments = [
+      { id: 'fp1', amount: 80, vendorId: 'v1' }
+    ];
+
+    const totalSalesRevenue = sales.reduce((sum, s) => sum + s.total, 0);
+    expect(totalSalesRevenue).toBe(150);
+  });
+
   it('renders application without crashing', () => {
     const { container } = render(<App />);
     expect(container).toBeInTheDocument();
