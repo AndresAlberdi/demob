@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { collection, query, getDocs, addDoc, serverTimestamp, where, updateDoc, doc, increment } from 'firebase/firestore';
-import { Search, ShoppingCart, LogOut, Package, CreditCard, Banknote, Coffee, History, AlertTriangle, Send, Clock, ShieldAlert, Download, Filter, ArrowLeft } from 'lucide-react';
+import { Search, ShoppingCart, LogOut, Package, CreditCard, Banknote, Coffee, History, AlertTriangle, Send, Clock, ShieldAlert, Download, Filter, ArrowLeft, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { exportToCSV } from '../utils/csvExporter';
 import { logEvent } from '../utils/logger';
