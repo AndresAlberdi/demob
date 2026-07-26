@@ -30,11 +30,7 @@ describe('Database XLSX Backup Exporter', () => {
       products: [
         { id: 'p1', name: 'Product A', price: 10, isDeleted: false },
         { id: 'p2', name: 'Product B', price: 12, costPrice: 9.6 }
-      ],
-      settings: [
-        { id: 's1', productTypes: ['Bebidas', 'Piqueos'] }
-      ],
-      empty_col: []
+      ]
     };
 
     exportAllToExcel(sampleData);
@@ -42,24 +38,24 @@ describe('Database XLSX Backup Exporter', () => {
     // Should create workbook
     expect(XLSX.utils.book_new).toHaveBeenCalled();
 
-    // Should create worksheets
-    expect(XLSX.utils.json_to_sheet).toHaveBeenCalledTimes(3);
+    // Should create worksheets for all 18 configured settings & collections
+    expect(XLSX.utils.json_to_sheet).toHaveBeenCalledTimes(18);
 
-    // Verify sheet names mapping
+    // Verify Spanish sheet name mappings
     expect(XLSX.utils.book_append_sheet).toHaveBeenCalledWith(
       expect.any(Object),
       expect.any(Array),
-      'products'
+      'Productos'
     );
     expect(XLSX.utils.book_append_sheet).toHaveBeenCalledWith(
       expect.any(Object),
       expect.any(Array),
-      'settings'
+      'Ventas'
     );
     expect(XLSX.utils.book_append_sheet).toHaveBeenCalledWith(
       expect.any(Object),
       expect.any(Array),
-      'empty_col'
+      'Categorías'
     );
 
     // Verify writeFile was called with backup filename

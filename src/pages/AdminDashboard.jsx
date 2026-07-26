@@ -341,7 +341,6 @@ const AdminDashboard = () => {
     try {
       const collectionsToBackup = [
         'products',
-        'settings',
         'shifts',
         'sales',
         'orders',
@@ -361,6 +360,13 @@ const AdminDashboard = () => {
         const snap = await getDocs(collection(db, colName));
         backupData[colName] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       }
+      
+      // Add settings sheets dynamically from active state (which merges Firestore data and default fallbacks)
+      backupData['categories'] = categories.map(cat => ({ Nombre: cat }));
+      backupData['expense_types'] = expenseTypes.map(type => ({ Nombre: type }));
+      backupData['extraordinary_motives'] = extraordinaryMotives.map(motive => ({ Nombre: motive }));
+      backupData['receipt_types'] = receiptTypes.map(type => ({ Nombre: type }));
+      backupData['loss_motives'] = motivos.map(mot => ({ Nombre: mot }));
       
       exportAllToExcel(backupData);
       await logEvent('DATABASE_BACKUP', currentUser?.email, 'Copia de seguridad de la base de datos descargada como XLSX');
