@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
+import { logEvent } from '../utils/logger';
 
 export default function SupervisorDashboard() {
   const { currentUser } = useAuth();
@@ -26,6 +27,10 @@ export default function SupervisorDashboard() {
   const [pastAudits, setPastAudits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
+
+  // Single Loss form & motifs
+  const [motivos, setMotivos] = useState([]);
+  const [singleLossForm, setSingleLossForm] = useState({ productId: '', qty: 1, reason: '' });
 
   // PIN Change State
   const [newPin, setNewPin] = useState('');
@@ -51,6 +56,16 @@ export default function SupervisorDashboard() {
 
       const cats = [...new Set(pList.map(p => p.category).filter(Boolean))];
       setCategories(cats);
+
+      // Load motifs
+      try {
+        const mSnap = await getDocs(collection(db, 'settings'));
+        mSnap.forEach(doc => {
+          if (doc.id === 'motivos') setMotivos(doc.data()?.list || []);
+        });
+      } catch (e) {
+        console.warn("Motivos fetch warning:", e);
+      }
 
       // Load past audits
       const aQuery = query(collection(db, 'inventory_audits'), orderBy('timestamp', 'desc'), limit(10));
@@ -136,6 +151,79 @@ export default function SupervisorDashboard() {
     }
   };
 
+  const handleReportSingleLoss = async (e) => {
+    e.preventDefault();
+    if (!singleLossForm.productId || !singleLossForm.reason) {
+      setMessage({ type: 'error', text: 'Por favor complete todos los campos.' });
+      return;
+    }
+    setLoading(true);
+    try {
+      const p = products.find(prod => prod.id === singleLossForm.productId);
+      if (!p) throw new Error("Producto no encontrado");
+
+      await addDoc(collection(db, "losses"), {
+        productId: p.id,
+        productName: p.name,
+        qty: parseInt(singleLossForm.qty, 10) || 1,
+        reason: singleLossForm.reason,
+        vendorId: currentUser?.uid || currentUser?.id || 'Supervisor',
+        vendorName: currentUser?.name || currentUser?.email || 'Supervisor',
+        shiftId: 'supervisor_direct',
+        timestamp: serverTimestamp(),
+        status: 'pending'
+      });
+
+      await logEvent('LOSS_REPORTED_BY_SUPERVISOR', currentUser?.name || currentUser?.email, `Supervisor reportó pérdida: ${singleLossForm.qty}x ${p.name} (${singleLossForm.reason})`);
+      setMessage({ type: 'success', text: `✅ Reporte de pérdida enviado a administración: ${singleLossForm.qty}x ${p.name}` });
+      setSingleLossForm({ productId: '', qty: 1, reason: '' });
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: 'Error al reportar la pérdida.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReportLossFromAudit = async () => {
+    if (!auditResult) return;
+    const discrepancies = auditResult.items.filter(item => item.difference < 0);
+    if (discrepancies.length === 0) {
+      alert("No hay diferencias faltantes que reportar como pérdida.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await addDoc(collection(db, "losses"), {
+        isAggregatedAuditLoss: true,
+        items: discrepancies.map(item => ({
+          productId: item.productId,
+          productName: item.productName,
+          qty: Math.abs(item.difference),
+          reason: 'Diferencia de Auditoría'
+        })),
+        qty: auditResult.totalFaltantes,
+        productName: `Arqueo en Bloque: ${discrepancies.length} productos con faltantes`,
+        reason: 'Descuadre de Auditoría',
+        vendorId: currentUser?.uid || currentUser?.id || 'Supervisor',
+        vendorName: currentUser?.name || currentUser?.email || 'Supervisor',
+        shiftId: 'supervisor_audit',
+        timestamp: serverTimestamp(),
+        status: 'pending'
+      });
+
+      await logEvent('AUDIT_LOSS_REPORTED_BY_SUPERVISOR', currentUser?.name || currentUser?.email, `Supervisor reportó pérdidas en bloque de auditoría: ${auditResult.totalFaltantes} unidades de ${discrepancies.length} productos`);
+      alert("✅ Pérdidas en bloque reportadas con éxito y enviadas a administración.");
+      setAuditResult(null);
+      setAuditCounts({});
+    } catch (err) {
+      console.error(err);
+      alert("Error al reportar pérdidas de auditoría.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleChangePin = async (e) => {
     e.preventDefault();
     if (newPin.length < 4 || newPin.length > 6) {
@@ -192,6 +280,9 @@ export default function SupervisorDashboard() {
             </div>
             <div className={`tab ${activeTab === 'summary' ? 'active' : ''}`} onClick={() => setActiveTab('summary')}>
               📊 Resumen & Histórico
+            </div>
+            <div className={`tab ${activeTab === 'losses' ? 'active' : ''}`} onClick={() => setActiveTab('losses')}>
+              ⚠️ Reportar Pérdidas
             </div>
             <div className={`tab ${activeTab === 'pin' ? 'active' : ''}`} onClick={() => setActiveTab('pin')}>
               🔒 Mi Contraseña / PIN
@@ -333,13 +424,22 @@ export default function SupervisorDashboard() {
                   </table>
                 </div>
 
-                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                   <button 
                     onClick={() => setAuditResult(null)} 
                     className="btn btn-secondary"
                   >
                     ✏️ Modificar Conteo
                   </button>
+                  {auditResult.totalFaltantes > 0 && (
+                    <button 
+                      onClick={handleReportLossFromAudit} 
+                      className="btn btn-danger"
+                      disabled={loading}
+                    >
+                      ⚠️ Reportar Faltantes como Pérdida
+                    </button>
+                  )}
                   <button 
                     onClick={saveAuditToFirestore} 
                     className="btn btn-primary"
@@ -433,6 +533,76 @@ export default function SupervisorDashboard() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* TAB 4: REPORTAR PÉRDIDAS */}
+        {activeTab === 'losses' && (
+          <div className="glass-panel" style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
+            <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>⚠️ Reportar Pérdida o Merma (Supervisor)</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+              Utilice este formulario para reportar productos dañados, vencidos, mermas o pérdidas identificadas directamente en el salón de ventas. Requiere aprobación del Administrador.
+            </p>
+
+            <form onSubmit={handleReportSingleLoss} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div className="form-group">
+                <label>Seleccionar Producto</label>
+                <select 
+                  className="input-field" 
+                  value={singleLossForm.productId} 
+                  onChange={e => setSingleLossForm({ ...singleLossForm, productId: e.target.value })} 
+                  required
+                >
+                  <option value="">Seleccione un producto...</option>
+                  {products.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} (Stock: {p.stock || 0})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Cantidad Perdida</label>
+                <input 
+                  type="number" 
+                  className="input-field" 
+                  min="1" 
+                  value={singleLossForm.qty} 
+                  onChange={e => setSingleLossForm({ ...singleLossForm, qty: e.target.value })} 
+                  required 
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Motivo de la Pérdida</label>
+                <select 
+                  className="input-field" 
+                  value={singleLossForm.reason} 
+                  onChange={e => setSingleLossForm({ ...singleLossForm, reason: e.target.value })} 
+                  required
+                >
+                  <option value="">Seleccione Motivo...</option>
+                  {motivos.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                  {motivos.length === 0 && (
+                    <>
+                      <option value="Vencimiento">Vencimiento</option>
+                      <option value="Dañado / Roto">Dañado / Roto</option>
+                      <option value="Consumo Interno">Consumo Interno</option>
+                      <option value="Robo / Pérdida">Robo / Pérdida</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <button 
+                type="submit" 
+                className="btn btn-danger btn-block" 
+                disabled={loading}
+              >
+                {loading ? 'Enviando...' : '⚠️ Registrar Reporte de Pérdida'}
+              </button>
+            </form>
           </div>
         )}
 

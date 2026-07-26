@@ -696,7 +696,7 @@ const VendorDashboard = () => {
       return alert("No se pueden agregar más de 40 productos por compra.");
     }
     const q = parseInt(qty, 10) || 1;
-    const unitPrice = parseFloat(costPrice) || product.costPrice || Math.round((product.price || 0) * 0.8 * 100) / 100;
+    const unitPrice = parseFloat(costPrice) || parseFloat(product.costPrice) || Math.round((parseFloat(product.price) || 0) * 0.8 * 100) / 100;
     
     setPurchaseCart(prev => {
       const existingIndex = prev.findIndex(item => item.productId === product.id);
@@ -878,7 +878,7 @@ const VendorDashboard = () => {
       <div className="dashboard-layout">
         <div className="dashboard-header flex-between" style={{ flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h2>🛒 Terminal de Ventas (POS) - Racquet La Estación</h2>
+            <h2>🛒 Terminal de Ventas (POS) - Wally La Estación</h2>
             <p>Operador: {currentUser?.name || currentUser?.email || 'Vendedor'}</p>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1247,45 +1247,6 @@ const VendorDashboard = () => {
         </div>
       )}
 
-      {/* EXTRA INCOME MODAL */}
-      {showExtraIncomeModal && (
-        <div className="modal-overlay" onClick={() => setShowExtraIncomeModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="flex-between" style={{marginBottom: '1rem'}}>
-              <h3>Registrar Ingreso Extraordinario</h3>
-              <button className="btn btn-secondary" onClick={() => setShowExtraIncomeModal(false)}>X</button>
-            </div>
-            <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
-              Utilice esto para ingresar efectivo (ej. sencillo, devoluciones, capital adicional) que incrementará la caja actual.
-            </p>
-            <form onSubmit={handleExtraIncome} style={{display: 'grid', gap: '1rem'}}>
-              <div className="form-group">
-                <label>Motivo</label>
-                <select className="input-field" value={extraIncomeMotive} onChange={e=>setExtraIncomeMotive(e.target.value)} required>
-                  <option value="">Seleccione Motivo...</option>
-                  {extraordinaryMotives.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Monto (Bs.)</label>
-                <input type="number" step="0.10" className="input-field" value={extraIncomeAmount} onChange={e=>setExtraIncomeAmount(e.target.value)} required />
-              </div>
-              <div className="form-group">
-                <label>Método</label>
-                <select className="input-field" value={extraIncomeMethod} onChange={e=>setExtraIncomeMethod(e.target.value)}>
-                  <option value="Efectivo">Efectivo (Ingresa a Caja)</option>
-                  <option value="Transferencia">Transferencia / QR (Banco)</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Nota / Detalle (Opcional)</label>
-                <input type="text" className="input-field" value={extraIncomeNote} onChange={e=>setExtraIncomeNote(e.target.value)} placeholder="Ej: Cambio en billetes de 10" />
-              </div>
-              <button type="submit" className="btn btn-success btn-block" disabled={isSubmitting}>Guardar Ingreso</button>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ORDERS / EXPENSES TAB */}
       {activeTab === 'orders' && (
@@ -1487,8 +1448,9 @@ const VendorDashboard = () => {
                 </div>
               </div>
               <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem', maxHeight: '400px', overflowY: 'auto'}}>
-                {posProducts.map(p => {
-                  const estCost = p.costPrice !== undefined ? p.costPrice : Math.round((p.price || 0) * 0.8 * 100)/100;
+                {inventoryProducts.map(p => {
+                  const rawCost = parseFloat(p.costPrice);
+                  const estCost = !isNaN(rawCost) ? rawCost : Math.round((parseFloat(p.price) || 0) * 0.8 * 100)/100;
                   return (
                     <div key={p.id} onClick={() => addProductToPurchaseCart(p, 1, estCost)} style={{padding: '0.75rem', background: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: '12px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '0.25rem', transition: 'all 0.15s'}} className="hover-scale">
                       <strong style={{fontSize: '0.85rem', lineHeight: '1.2'}}>{p.name}</strong>

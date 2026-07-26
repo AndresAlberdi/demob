@@ -59,9 +59,9 @@ const Login = () => {
       <div className="auth-card glass-panel">
         <div className="auth-header">
           <div className="logo-container" style={{ background: 'transparent', boxShadow: 'none' }}>
-            <img src="/logo-racquet.jpeg" alt="Racquet La Estación Logo" style={{ width: '80px', height: '80px', borderRadius: '18px', objectFit: 'cover', border: '3px solid #0a137c' }} />
+            <img src="/logo-racquet.jpeg" alt="Wally La Estación Logo" style={{ width: '80px', height: '80px', borderRadius: '18px', objectFit: 'cover', border: '3px solid #0a137c' }} />
           </div>
-          <h1>Racquet La Estación</h1>
+          <h1>Wally La Estación</h1>
           <p>Sistema de Control, Inventario & POS</p>
         </div>
         

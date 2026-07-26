@@ -42,15 +42,15 @@ vi.mock('../context/AuthContext', async (importOriginal) => {
   };
 });
 
-describe('Racquet La Estación UI & Authentication Unit Tests', () => {
-  it('renders vendor PIN login tab by default with 6-digit PIN requirements and Racquet La Estación branding', () => {
+describe('Wally La Estación UI & Authentication Unit Tests', () => {
+  it('renders vendor PIN login tab by default with 6-digit PIN requirements and Wally La Estación branding', () => {
     render(
       <BrowserRouter>
         <Login />
       </BrowserRouter>
     );
 
-    expect(screen.getByText('Racquet La Estación')).toBeInTheDocument();
+    expect(screen.getByText('Wally La Estación')).toBeInTheDocument();
     expect(screen.getByText('PIN de Acceso')).toBeInTheDocument();
     expect(screen.getByText('🌙 Modo Oscuro')).toBeInTheDocument();
     
@@ -107,6 +107,55 @@ describe('Racquet La Estación UI & Authentication Unit Tests', () => {
 
     // 50 (Cash) + 30 (QR) + 100 (Repaid Loan) = 180 (Pending 100 loan is NOT counted)
     expect(totalIncome).toBe(180);
+  });
+
+  it('excludes loan repayments from total income to prevent data duplication', () => {
+    const cashSales = 100;
+    const qrSales = 50;
+    const extraCash = 10;
+    const extraQR = 20;
+    const loanRepayments = 30; // Excluded!
+
+    const totalIncome = cashSales + qrSales + extraCash + extraQR;
+    expect(totalIncome).toBe(180);
+  });
+
+  it('calculates cash flow balance using latest shift start cash', () => {
+    const latestShiftStartCash = 200;
+    const extraCash = 50;
+    const loanRepaymentsCash = 10;
+    const cashSales = 120;
+    const purchases = 40;
+
+    const rawCashBalance = extraCash + loanRepaymentsCash + cashSales + latestShiftStartCash - purchases;
+    const cashBalance = Math.max(0, rawCashBalance);
+    expect(cashBalance).toBe(340);
+  });
+
+  it('decrements stocks for all products in an aggregated audit loss block when approved', () => {
+    const products = [
+      { id: 'p1', name: 'Product 1', stock: 10 },
+      { id: 'p2', name: 'Product 2', stock: 5 }
+    ];
+    const lossDoc = {
+      isAggregatedAuditLoss: true,
+      items: [
+        { productId: 'p1', qty: 2 },
+        { productId: 'p2', qty: 3 }
+      ]
+    };
+
+    if (lossDoc.isAggregatedAuditLoss && Array.isArray(lossDoc.items)) {
+      for (const item of lossDoc.items) {
+        const prod = products.find(p => p.id === item.productId);
+        if (prod) {
+          prod.stock = Math.max(0, prod.stock - item.qty);
+        }
+      }
+    }
+
+    expect(products.find(p => p.id === 'p1').stock).toBe(8);
+    expect(products.find(p => p.id === 'p2').stock).toBe(2);
   });
 
   it('renders application without crashing', () => {

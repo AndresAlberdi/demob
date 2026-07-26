@@ -30,11 +30,11 @@ export default function Navbar() {
         <div className="navbar-brand" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
           <img 
             src="/logo-racquet.jpeg" 
-            alt="Racquet La Estación Logo" 
+            alt="Wally La Estación Logo" 
             className="navbar-logo" 
           />
           <div className="brand-text">
-            <span className="brand-title">Racquet La Estación</span>
+            <span className="brand-title">Wally La Estación</span>
             <span className="brand-subtitle">Sistema de Control & POS</span>
           </div>
         </div>

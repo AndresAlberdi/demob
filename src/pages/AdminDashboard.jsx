@@ -437,12 +437,16 @@ const AdminDashboard = () => {
   };
 
   const startEditProduct = (p) => {
+    const minStockVal = p.minStock !== undefined ? p.minStock : 3;
+    const defaultCost = parseFloat(p.costPrice !== undefined ? p.costPrice : Math.round((p.price || 0) * 0.8 * 100) / 100) || 0;
     setEditingProduct(p.id);
     setEditProdForm({
       name: p.name,
       category: p.category,
       price: p.price,
-      stock: p.stock !== undefined ? p.stock : 0
+      stock: p.stock !== undefined ? p.stock : 0,
+      costPrice: defaultCost,
+      minStock: minStockVal
     });
   };
 
@@ -452,9 +456,11 @@ const AdminDashboard = () => {
         name: editProdForm.name.trim(),
         category: editProdForm.category.trim(),
         price: parseFloat(editProdForm.price),
-        stock: parseInt(editProdForm.stock)
+        stock: parseInt(editProdForm.stock),
+        costPrice: parseFloat(editProdForm.costPrice) || 0,
+        minStock: parseInt(editProdForm.minStock) || 0
       });
-      await logEvent('PRODUCT_UPDATED', currentUser?.email, `Editado producto "${editProdForm.name}": Precio Bs. ${editProdForm.price}, Stock ${editProdForm.stock}`);
+      await logEvent('PRODUCT_UPDATED', currentUser?.email, `Editado producto "${editProdForm.name}": Precio Bs. ${editProdForm.price}, Stock ${editProdForm.stock}, Costo Compra Bs. ${editProdForm.costPrice}, Stock Mínimo ${editProdForm.minStock}`);
       setEditingProduct(null);
       loadData();
     } catch (e) {
@@ -504,10 +510,20 @@ const AdminDashboard = () => {
       if (!lossDoc) return;
 
       if (approved) {
-        const prod = products.find(p => p.id === lossDoc.productId || p.name === lossDoc.productName);
-        if (prod) {
-          const newStock = Math.max(0, (prod.stock || 0) - (lossDoc.qty || 1));
-          await updateDoc(doc(db, "products", prod.id), { stock: newStock });
+        if (lossDoc.isAggregatedAuditLoss && Array.isArray(lossDoc.items)) {
+          for (const item of lossDoc.items) {
+            const prod = products.find(p => p.id === item.productId || p.name === item.productName);
+            if (prod) {
+              const newStock = Math.max(0, (prod.stock || 0) - (item.qty || 1));
+              await updateDoc(doc(db, "products", prod.id), { stock: newStock });
+            }
+          }
+        } else {
+          const prod = products.find(p => p.id === lossDoc.productId || p.name === lossDoc.productName);
+          if (prod) {
+            const newStock = Math.max(0, (prod.stock || 0) - (lossDoc.qty || 1));
+            await updateDoc(doc(db, "products", prod.id), { stock: newStock });
+          }
         }
         await updateDoc(doc(db, "losses", lossId), { 
           status: 'approved',
@@ -901,8 +917,16 @@ const AdminDashboard = () => {
     setIsLoading(true);
     try {
       const shiftSales = sales.filter(s => s.shiftId === shiftId);
-      const cashSales = shiftSales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
-      const qrSales = shiftSales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
+      const cashSales = shiftSales.reduce((acc, s) => {
+        if (s.method === 'Efectivo') return acc + (parseFloat(s.total) || 0);
+        if (s.method === 'MIXTO') return acc + (parseFloat(s.cashPaid) || 0);
+        return acc;
+      }, 0);
+      const qrSales = shiftSales.reduce((acc, s) => {
+        if (s.method === 'QR') return acc + (parseFloat(s.total) || 0);
+        if (s.method === 'MIXTO') return acc + (parseFloat(s.qrPaid) || 0);
+        return acc;
+      }, 0);
       const shiftExpenses = orders.filter(o => o.shiftId === shiftId).reduce((acc, o) => acc + o.amount, 0);
       
       const shDoc = shifts.find(s => s.id === shiftId);
@@ -948,6 +972,11 @@ const AdminDashboard = () => {
       if (periodFilter === 'hoy') {
         startLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
         endLimit = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+      } else if (periodFilter === 'ayer') {
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        startLimit = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 0, 0, 0);
+        endLimit = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 23, 59, 59);
       } else if (periodFilter === 'semana') {
         const startOfWeek = new Date(now);
         const day = startOfWeek.getDay();
@@ -1001,6 +1030,50 @@ const AdminDashboard = () => {
     }
   };
 
+  const getBestSellersOfCurrentMonth = () => {
+    try {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+      const checkCurrentMonth = (ts) => {
+        if (!ts) return false;
+        let dt = null;
+        if (typeof ts.toDate === 'function') {
+          dt = ts.toDate();
+        } else if (typeof ts === 'object' && ts !== null && typeof ts.seconds === 'number') {
+          dt = new Date(ts.seconds * 1000);
+        } else if (typeof ts === 'string' || typeof ts === 'number') {
+          dt = new Date(ts);
+        } else if (ts instanceof Date) {
+          dt = ts;
+        }
+        if (!dt || !(dt instanceof Date) || isNaN(dt.getTime())) return false;
+        return dt >= startOfMonth && dt <= endOfMonth;
+      };
+
+      const safeSales = Array.isArray(sales) ? sales : [];
+      const monthlySales = safeSales.filter(s => checkCurrentMonth(s?.timestamp));
+      
+      const salesByVendor = {};
+      monthlySales.forEach(s => {
+        const name = s.vendorName || s.operator || 'Desconocido';
+        const amount = parseFloat(s.total) || 0;
+        if (!salesByVendor[name]) {
+          salesByVendor[name] = 0;
+        }
+        salesByVendor[name] += amount;
+      });
+
+      return Object.entries(salesByVendor)
+        .map(([name, totalSales]) => ({ name, totalSales }))
+        .sort((a, b) => b.totalSales - a.totalSales);
+    } catch (e) {
+      console.error("Error calculating monthly best sellers:", e);
+      return [];
+    }
+  };
+
   const { periodSales = [], periodOrders = [], periodLoans = [], periodLosses = [], periodExtraIncomes = [], checkTs = () => false } = getFilteredByPeriod();
 
   // Metrics based on period
@@ -1035,7 +1108,7 @@ const AdminDashboard = () => {
   const pExtraCash = periodExtraIncomes.filter(i => i?.method === 'Efectivo').reduce((acc, i) => acc + (parseFloat(i?.amount) || 0), 0);
   const pExtraQR = periodExtraIncomes.filter(i => i?.method === 'QR').reduce((acc, i) => acc + (parseFloat(i?.amount) || 0), 0);
 
-  const pTotalIncome = pCashSales + pQRSales + pLoanRepayments + pExtraCash + pExtraQR;
+  const pTotalIncome = pCashSales + pQRSales + pExtraCash + pExtraQR;
   const pTotalExpenses = pPurchases;
   
   // Initial cash of shifts opened in this period
@@ -1043,7 +1116,9 @@ const AdminDashboard = () => {
   const pInitialCash = safeShifts.filter(s => checkTs(s?.startTime || s?.timestamp)).reduce((acc, s) => acc + (parseFloat(s?.startCash) || 0), 0);
 
   // SALDO ACUMULADO EN CAJA REAL (NUNCA NEGATIVO)
-  const rawCashBalance = pInitialCash + pCashSales + pLoanRepaymentsCash + pExtraCash - pPurchases;
+  const latestShift = safeShifts[0];
+  const latestShiftStartCash = latestShift ? (parseFloat(latestShift.startCash) || 0) : 0;
+  const rawCashBalance = pExtraCash + pLoanRepaymentsCash + pCashSales + latestShiftStartCash - pPurchases;
   const pCashBalance = Math.max(0, rawCashBalance);
 
   // Active shift calculations
@@ -1066,7 +1141,7 @@ const AdminDashboard = () => {
       <div className="dashboard-layout">
         <div className="dashboard-header flex-between" style={{ flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h2>⚙️ Panel de Administración - Racquet La Estación</h2>
+            <h2>⚙️ Panel de Administración - Wally La Estación</h2>
             <p>Administrador: {currentUser?.email}</p>
             {activeShiftDoc && (
               <div style={{marginTop: '0.5rem'}}>
@@ -1141,6 +1216,7 @@ const AdminDashboard = () => {
             </div>
             <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center'}}>
               <button className={`btn ${periodFilter === 'hoy' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPeriodFilter('hoy')}>Hoy</button>
+              <button className={`btn ${periodFilter === 'ayer' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPeriodFilter('ayer')}>Ayer</button>
               <button className={`btn ${periodFilter === 'semana' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPeriodFilter('semana')}>Esta Semana</button>
               <button className={`btn ${periodFilter === 'mes' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPeriodFilter('mes')}>Este Mes</button>
               <button className={`btn ${periodFilter === 'personalizado' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setPeriodFilter('personalizado')}>Entre Fechas</button>
@@ -1234,8 +1310,8 @@ const AdminDashboard = () => {
                 <span>📈 Ingresos Totales</span>
                 <HelpTooltip 
                   title="Ingresos Brutos Combinados (Efectivo + QR)" 
-                  text="Suma total de todas las entradas financieras (Ventas Efectivo + QR + Cobros + Extras)."
-                  example="Suma total de Bs. 11.00 (Ef) + Bs. 6.50 (QR) + Bs. 13.00 (Otros) = Bs. 30.50."
+                  text="Suma total de todas las entradas financieras directas (Ventas Efectivo + QR + Extras). Excluye cobros de préstamos para evitar duplicidades."
+                  example="Suma total de Bs. 11.00 (Ef) + Bs. 6.50 (QR) + Bs. 13.00 (Extras) = Bs. 30.50."
                 />
               </h3>
               <div className="card-value">Bs. {pTotalIncome.toFixed(2)}</div>
@@ -2432,8 +2508,16 @@ const AdminDashboard = () => {
                   .map(sh => {
                     const isOpen = sh.status === 'open';
                     const shiftSales = sales.filter(s => s.shiftId === sh.id);
-                    const cashSales = shiftSales.filter(s => s.method === 'Efectivo').reduce((acc, s) => acc + s.total, 0);
-                    const qrSales = shiftSales.filter(s => s.method === 'QR').reduce((acc, s) => acc + s.total, 0);
+                    const cashSales = shiftSales.reduce((acc, s) => {
+                      if (s.method === 'Efectivo') return acc + (parseFloat(s.total) || 0);
+                      if (s.method === 'MIXTO') return acc + (parseFloat(s.cashPaid) || 0);
+                      return acc;
+                    }, 0);
+                    const qrSales = shiftSales.reduce((acc, s) => {
+                      if (s.method === 'QR') return acc + (parseFloat(s.total) || 0);
+                      if (s.method === 'MIXTO') return acc + (parseFloat(s.qrPaid) || 0);
+                      return acc;
+                    }, 0);
                     const shiftExpenses = orders.filter(o => o.shiftId === sh.id).reduce((acc, o) => acc + o.amount, 0);
                     const expectedCash = (sh.startCash || 0) + cashSales - shiftExpenses;
                     
@@ -2481,61 +2565,89 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* --- VENDORS MANAGEMENT TAB --- */}
       {!isLoading && activeTab === 'users' && (
-        <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
-          <div className="card glass-panel">
-            <h3>Nuevo Vendedor (PIN)</h3>
-            <form onSubmit={createUser}>
-              <div className="form-group">
-                <label>Nombre del Vendedor</label>
-                <input type="text" className="input-field" value={newUser.name} onChange={e=>setNewUser({...newUser, name: e.target.value})} required/>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
+            <div className="card glass-panel">
+              <h3>Nuevo Vendedor (PIN)</h3>
+              <form onSubmit={createUser}>
+                <div className="form-group">
+                  <label>Nombre del Vendedor</label>
+                  <input type="text" className="input-field" value={newUser.name} onChange={e=>setNewUser({...newUser, name: e.target.value})} required/>
+                </div>
+                <div className="form-group">
+                  <label>PIN de Acceso (6 dígitos)</label>
+                  <input type="text" className="input-field" maxLength="6" pattern="\d{6}" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin: e.target.value})} required/>
+                </div>
+                <button type="submit" className="btn btn-primary btn-block">Registrar Vendedor</button>
+              </form>
+            </div>
+            
+            <div className="card glass-panel">
+              <h3>Vendedores Registrados</h3>
+              <div className="item-list">
+                {appUsers.map(u => (
+                  <div key={u.id} className="list-item">
+                    <div className="item-info">
+                      <h4>{u.name}</h4>
+                      {editingUser === u.id ? (
+                        <input 
+                          type="text" 
+                          maxLength="6"
+                          className="input-field"
+                          style={{width: '100px', padding: '0.25rem', marginTop: '0.25rem'}}
+                          value={editPinValue}
+                          onChange={(e) => setEditPinValue(e.target.value)}
+                          placeholder="PIN"
+                        />
+                      ) : (
+                        <p>PIN: {u.pin}</p>
+                      )}
+                    </div>
+                    <div style={{display: 'flex', gap: '0.5rem'}}>
+                      {editingUser === u.id ? (
+                        <>
+                          <button className="btn btn-success" onClick={() => updatePin(u.id)}><Check size={16}/></button>
+                          <button className="btn btn-secondary" onClick={() => setEditingUser(null)}><X size={16}/></button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="btn btn-secondary" onClick={() => {setEditingUser(u.id); setEditPinValue(u.pin);}}>Cambiar PIN</button>
+                          <button className="btn btn-danger" onClick={() => deleteUser(u.id)}>Eliminar</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {appUsers.length === 0 && <p>No hay vendedores registrados.</p>}
               </div>
-              <div className="form-group">
-                <label>PIN de Acceso (6 dígitos)</label>
-                <input type="text" className="input-field" maxLength="6" pattern="\d{6}" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin: e.target.value})} required/>
-              </div>
-              <button type="submit" className="btn btn-primary btn-block">Registrar Vendedor</button>
-            </form>
+            </div>
           </div>
-          
-          <div className="card glass-panel">
-            <h3>Vendedores Registrados</h3>
+
+          <div className="card glass-panel" style={{ maxWidth: '100%' }}>
+            <h3>🏆 Mejores Vendedores del Mes Actual</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              Volumen total de ventas acumulado desde el primero de este mes.
+            </p>
             <div className="item-list">
-              {appUsers.map(u => (
-                <div key={u.id} className="list-item">
-                  <div className="item-info">
-                    <h4>{u.name}</h4>
-                    {editingUser === u.id ? (
-                      <input 
-                        type="text" 
-                        maxLength="6"
-                        className="input-field"
-                        style={{width: '100px', padding: '0.25rem', marginTop: '0.25rem'}}
-                        value={editPinValue}
-                        onChange={(e) => setEditPinValue(e.target.value)}
-                        placeholder="PIN"
-                      />
-                    ) : (
-                      <p>PIN: {u.pin}</p>
-                    )}
+              {getBestSellersOfCurrentMonth().map((v, index) => (
+                <div key={v.name} className="list-item" style={{ padding: '0.75rem 1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <span style={{ fontSize: '1.25rem', fontWeight: 'bold', width: '2rem' }}>
+                      {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                    </span>
+                    <h4 style={{ margin: 0 }}>{v.name}</h4>
                   </div>
-                  <div style={{display: 'flex', gap: '0.5rem'}}>
-                    {editingUser === u.id ? (
-                      <>
-                        <button className="btn btn-success" onClick={() => updatePin(u.id)}><Check size={16}/></button>
-                        <button className="btn btn-secondary" onClick={() => setEditingUser(null)}><X size={16}/></button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="btn btn-secondary" onClick={() => {setEditingUser(u.id); setEditPinValue(u.pin);}}>Cambiar PIN</button>
-                        <button className="btn btn-danger" onClick={() => deleteUser(u.id)}>Eliminar</button>
-                      </>
-                    )}
-                  </div>
+                  <strong style={{ fontSize: '1.1rem', color: 'var(--primary-color)' }}>
+                    Bs. {v.totalSales.toFixed(2)}
+                  </strong>
                 </div>
               ))}
-              {appUsers.length === 0 && <p>No hay vendedores registrados.</p>}
+              {getBestSellersOfCurrentMonth().length === 0 && (
+                <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '1rem' }}>
+                  No se registran ventas para este mes aún.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -2553,6 +2665,16 @@ const AdminDashboard = () => {
                     <h4>{loss.qty}x {loss.productName}</h4>
                     <span className="badge badge-error">{loss.reason}</span>
                   </div>
+                  {loss.isAggregatedAuditLoss && Array.isArray(loss.items) && (
+                    <div style={{ background: 'rgba(0,0,0,0.03)', padding: '0.5rem', borderRadius: '8px', width: '100%', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                      <strong>Detalle de productos faltantes:</strong>
+                      <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0 }}>
+                        {loss.items.map(item => (
+                          <li key={item.productId}>{item.qty}x {item.productName}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <div className="flex-between" style={{width: '100%'}}>
                     <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
                       Vendedor: {loss.vendorName || '-'} | Fecha: {formatDate(loss.timestamp)}
@@ -2577,6 +2699,16 @@ const AdminDashboard = () => {
                       {loss.status === 'approved' ? 'Aprobado/Descontado' : 'Rechazado'}
                     </span>
                   </div>
+                  {loss.isAggregatedAuditLoss && Array.isArray(loss.items) && (
+                    <div style={{ background: 'rgba(0,0,0,0.03)', padding: '0.5rem', borderRadius: '8px', width: '100%', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                      <strong>Detalle de productos:</strong>
+                      <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0 }}>
+                        {loss.items.map(item => (
+                          <li key={item.productId}>{item.qty}x {item.productName}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <div className="flex-between" style={{width: '100%'}}>
                     <p style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
                       Vendedor: {loss.vendorName || '-'} | Motivo: {loss.reason} | Fecha: {formatDate(loss.timestamp)}

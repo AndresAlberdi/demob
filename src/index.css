@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root, [data-theme="light"] {
-  /* Color Palette - Racquet La Estación */
+  /* Color Palette - Wally La Estación */
   --color-principal: #0a137c;
   --color-secundario-blue: #276cd3;
   --color-secundario-yellow: #f3d92e;
@@ -40,7 +40,7 @@
 }
 
 [data-theme="dark"] {
-  /* Color Palette - Racquet La Estación (Dark Mode) */
+  /* Color Palette - Wally La Estación (Dark Mode) */
   --color-principal: #0a137c;
   --color-secundario-blue: #276cd3;
   --color-secundario-yellow: #f3d92e;
