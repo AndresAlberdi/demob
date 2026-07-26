@@ -143,7 +143,9 @@ const VendorDashboard = () => {
   const isAdmin = userRole === 'admin' ||
                   currentUser?.role === 'admin' || 
                   currentUser?.email === 'pretsodatabase@gmail.com' ||
+                  currentUser?.email === 'mrwally@snack.com' ||
                   currentUser?.email === 'admin@demob.com' ||
+                  currentUser?.email === (import.meta.env.VITE_ADMIN_EMAIL || '') ||
                   localStorage.getItem('user_role') === 'admin' ||
                   window.location.search.includes('from=admin');
 

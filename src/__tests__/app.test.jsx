@@ -70,7 +70,7 @@ describe('Wally La Estación UI & Authentication Unit Tests', () => {
     const adminTab = screen.getByText('Admin');
     fireEvent.click(adminTab);
 
-    const emailInput = screen.getByPlaceholderText('admin@demob.com');
+    const emailInput = screen.getByPlaceholderText('admin@demo.com');
     const passwordInput = screen.getByPlaceholderText('••••••••');
 
     expect(emailInput).toBeInTheDocument();

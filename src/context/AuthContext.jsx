@@ -43,8 +43,14 @@ export const AuthProvider = ({ children }) => {
       if (user && !user.isAnonymous) {
         setCurrentUser(user);
         
+        const adminEmailEnv = import.meta.env.VITE_ADMIN_EMAIL || 'admin@demob.com';
         // Special case for the main admin per instructions
-        if (user.email === 'pretsodatabase@gmail.com' || user.email === 'admin@demob.com') {
+        if (
+          user.email === 'pretsodatabase@gmail.com' || 
+          user.email === 'mrwally@snack.com' || 
+          user.email === 'admin@demob.com' ||
+          user.email === adminEmailEnv
+        ) {
           setUserRole('admin');
         } else {
           // Fetch role from firestore if needed for other email users
@@ -83,7 +89,9 @@ export const AuthProvider = ({ children }) => {
           await signInAnonymously(auth);
         } catch (anonErr) {
           if (anonErr.code === 'auth/admin-restricted-operation' || anonErr.code === 'auth/operation-not-allowed') {
-            await signInWithEmailAndPassword(auth, 'admin@demob.com', 'Admin*123');
+            const adminEmailEnv = import.meta.env.VITE_ADMIN_EMAIL || 'admin@demob.com';
+            const adminPasswordEnv = import.meta.env.VITE_ADMIN_PASSWORD || 'Admin*123';
+            await signInWithEmailAndPassword(auth, adminEmailEnv, adminPasswordEnv);
           } else {
             throw anonErr;
           }

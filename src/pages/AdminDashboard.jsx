@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { collection, query, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy, serverTimestamp, increment } from 'firebase/firestore';
-import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity, Download, Filter, FileText, Calendar, ListFilter, PlusCircle, ArrowDownCircle, DollarSign } from 'lucide-react';
+import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity, Download, Filter, FileText, Calendar, ListFilter, PlusCircle, ArrowDownCircle, DollarSign, Loader2 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { parseAndUploadCSV } from '../utils/csvParser';
 import { exportToCSV } from '../utils/csvExporter';
+import { exportAllToExcel } from '../utils/excelExporter';
 import { logEvent } from '../utils/logger';
 import Navbar from '../components/Navbar';
 
@@ -93,6 +94,7 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('reports'); // reports, inventory, shifts, users, losses, logs
   const [isLoading, setIsLoading] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
   
   // Data states
   const [products, setProducts] = useState([]);
@@ -330,6 +332,44 @@ const AdminDashboard = () => {
     } finally {
       setIsLoading(false);
       e.target.value = null;
+    }
+  };
+
+  // --- DATABASE BACKUP TO XLSX ---
+  const handleDatabaseBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const collectionsToBackup = [
+        'products',
+        'settings',
+        'shifts',
+        'sales',
+        'orders',
+        'losses',
+        'loans',
+        'extra_incomes',
+        'system_logs',
+        'app_users',
+        'users',
+        'vendor_fines',
+        'fine_payments',
+        'inventory_audits'
+      ];
+      
+      const backupData = {};
+      for (const colName of collectionsToBackup) {
+        const snap = await getDocs(collection(db, colName));
+        backupData[colName] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      }
+      
+      exportAllToExcel(backupData);
+      await logEvent('DATABASE_BACKUP', currentUser?.email, 'Copia de seguridad de la base de datos descargada como XLSX');
+      alert("Copia de seguridad (Backup) generada y descargada exitosamente.");
+    } catch (err) {
+      console.error(err);
+      alert("Error al generar la copia de seguridad: " + err.message);
+    } finally {
+      setIsBackingUp(false);
     }
   };
 
@@ -1193,7 +1233,7 @@ const AdminDashboard = () => {
             <ShieldAlert size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Pérdidas ({pendingLosses.length})
           </div>
           <div className={`tab ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
-            <FileText size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Logs
+            <FileText size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Logs y Backup
           </div>
         </div>
       
@@ -2775,11 +2815,44 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      {/* --- SYSTEM LOGS TAB --- */}
+      {/* --- SYSTEM LOGS & BACKUP TAB --- */}
       {!isLoading && activeTab === 'logs' && (
-        <div className="card glass-panel">
-          <div className="flex-between" style={{marginBottom: '1rem'}}>
-            <h3><FileText size={20} /> Historial y Auditoría de Eventos del Sistema</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
+          {/* Backup Section */}
+          <div className="card glass-panel" style={{ padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h3 style={{ marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-color)' }}>
+                  <Download size={20} style={{ color: 'var(--primary-color)' }} /> Copia de Seguridad Completa (Backup)
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '800px', margin: 0 }}>
+                  Exporta toda la información almacenada en la base de datos en un único archivo Excel (.xlsx).
+                  Cada colección se guarda en una hoja dedicada, conservando todos los campos del sistema para permitir la completa reconstrucción de:
+                  Inventario, Parametrizaciones (categorías, egresos, ingresos, comprobantes), Movimientos (ventas, compras, préstamos, ingresos extraordinarios, multas), Usuarios, Historial de Revisiones y Logs.
+                </p>
+              </div>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleDatabaseBackup} 
+                disabled={isBackingUp}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', minWidth: '190px', justifyContent: 'center' }}
+              >
+                {isBackingUp ? (
+                  <>
+                    <Loader2 className="spinner" size={16} /> Procesando...
+                  </>
+                ) : (
+                  <>
+                    <Download size={16} /> Descargar Backup (.xlsx)
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="card glass-panel">
+            <div className="flex-between" style={{marginBottom: '1rem'}}>
+              <h3><FileText size={20} /> Historial y Auditoría de Eventos del Sistema</h3>
             <button className="btn btn-secondary" onClick={() => exportToCSV('logs_sistema.csv', systemLogs.map(l => ({
               FECHA: formatDate(l.timestamp), TIPO: l.type, USUARIO: l.user, DETALLE: l.detail, MONTO: l.amount
             })))}>
@@ -2816,7 +2889,8 @@ const AdminDashboard = () => {
             </tbody>
           </table>
         </div>
-      )}
+      </div>
+    )}
 
       </div>
     </div>

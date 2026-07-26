@@ -1,8 +1,24 @@
 #!/bin/bash
 set -e
 
-PROJECT_ID="demob-1e4a1"
-echo "=== MODO DE DESPLIEGUE: PRODUCCIÓN ($PROJECT_ID) ==="
+# Read VITE_FIREBASE_PROJECT_ID from .env
+PROJECT_ID=""
+if [ -f .env ]; then
+  PROJECT_ID=$(grep -E "^VITE_FIREBASE_PROJECT_ID=" .env | cut -d'=' -f2 | tr -d '"' | tr -d "'" | tr -d '\r')
+fi
+
+if [ -z "$PROJECT_ID" ]; then
+  echo "Error: VITE_FIREBASE_PROJECT_ID no está definido en .env"
+  exit 1
+fi
+
+if [ "$PROJECT_ID" = "snack-laestacion" ]; then
+  ENV_NAME="Producción"
+else
+  ENV_NAME="Pruebas/Staging"
+fi
+
+echo "=== MODO DE DESPLIEGUE: $ENV_NAME ($PROJECT_ID) ==="
 
 echo "=== [1/4] Ejecutando pruebas unitarias locales ==="
 npm run test
@@ -23,7 +39,7 @@ git add .
 if git diff-index --quiet HEAD --; then
   echo "No hay cambios pendientes por commitear."
 else
-  git commit -m "chore: despliegue (en producción) ($PROJECT_ID) y actualizaciones"
+  git commit -m "chore: despliegue ($ENV_NAME) ($PROJECT_ID) y actualizaciones"
 fi
 
 echo "Intentando realizar push a GitHub..."

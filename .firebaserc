@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "demob-1e4a1"
+    "default": "demob-1e4a1",
+    "staging": "demob-1e4a1",
+    "production": "snack-laestacion"
   }
 }

@@ -5,8 +5,6 @@ import { Store, Loader2, KeyRound, UserCircle } from 'lucide-react';
 
 const Login = () => {
   const [loginMethod, setLoginMethod] = useState('pin'); // 'pin' or 'email'
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -20,8 +18,8 @@ const Login = () => {
     setIsSubmitting(true);
     
     try {
-      const currentEmail = e.target.email?.value || email;
-      const currentPassword = e.target.password?.value || password;
+      const currentEmail = e.target.email?.value || '';
+      const currentPassword = e.target.password?.value || '';
       await login(currentEmail, currentPassword);
       navigate('/');
     } catch (err) {
@@ -91,9 +89,7 @@ const Login = () => {
               name="email"
               type="email" 
               className="input-field" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@demob.com"
+              placeholder="admin@demo.com"
               autoComplete="username"
               required={loginMethod === 'email'}
             />
@@ -106,8 +102,6 @@ const Login = () => {
               name="password"
               type="password" 
               className="input-field" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               autoComplete="current-password"
               required={loginMethod === 'email'}
