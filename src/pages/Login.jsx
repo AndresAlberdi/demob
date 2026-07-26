@@ -59,7 +59,22 @@ const Login = () => {
           <div className="logo-container" style={{ background: 'transparent', boxShadow: 'none' }}>
             <img src="/logo-racquet.jpeg" alt="Wally La Estación Logo" style={{ width: '80px', height: '80px', borderRadius: '18px', objectFit: 'cover', border: '3px solid #0a137c' }} />
           </div>
-          <h1>Wally La Estación</h1>
+          <h1>
+            Wally La Estación
+            {import.meta.env.VITE_FIREBASE_PROJECT_ID !== 'snack-laestacion' && (
+              <span className="demo-badge" style={{ 
+                marginLeft: '8px', 
+                fontSize: '13px', 
+                background: '#ff3b30', 
+                color: 'white', 
+                padding: '2px 8px', 
+                borderRadius: '4px', 
+                fontWeight: 'bold',
+                verticalAlign: 'middle',
+                display: 'inline-block'
+              }}>DEMO</span>
+            )}
+          </h1>
           <p>Sistema de Control, Inventario & POS</p>
         </div>
         

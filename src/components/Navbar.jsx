@@ -34,7 +34,22 @@ export default function Navbar() {
             className="navbar-logo" 
           />
           <div className="brand-text">
-            <span className="brand-title">Wally La Estación</span>
+            <span className="brand-title">
+              Wally La Estación
+              {import.meta.env.VITE_FIREBASE_PROJECT_ID !== 'snack-laestacion' && (
+                <span className="demo-badge" style={{ 
+                  marginLeft: '8px', 
+                  fontSize: '11px', 
+                  background: '#ff3b30', 
+                  color: 'white', 
+                  padding: '2px 6px', 
+                  borderRadius: '4px', 
+                  fontWeight: 'bold',
+                  verticalAlign: 'middle',
+                  display: 'inline-block'
+                }}>DEMO</span>
+              )}
+            </span>
             <span className="brand-subtitle">Sistema de Control & POS</span>
           </div>
         </div>
