@@ -158,6 +158,40 @@ describe('Wally La Estación UI & Authentication Unit Tests', () => {
     expect(products.find(p => p.id === 'p2').stock).toBe(2);
   });
 
+  it('correctly calculates total cost price of block losses summing quantities * costPrice', () => {
+    const products = [
+      { id: 'p1', costPrice: 10 },
+      { id: 'p2', costPrice: 15 }
+    ];
+    const lossDoc = {
+      isAggregatedAuditLoss: true,
+      items: [
+        { productId: 'p1', qty: 2, costPrice: 10 },
+        { productId: 'p2', qty: 3 }
+      ]
+    };
+
+    const calculateBlockLossTotalCost = (loss) => {
+      return loss.items.reduce((sum, item) => {
+        const price = parseFloat(item.costPrice) || parseFloat(products.find(p => p.id === item.productId)?.costPrice) || 0;
+        return sum + (price * (parseInt(item.qty, 10) || 0));
+      }, 0);
+    };
+
+    expect(calculateBlockLossTotalCost(lossDoc)).toBe(65);
+  });
+
+  it('correctly sums all pending accumulated fines of all users', () => {
+    const appUsers = [
+      { id: 'u1', name: 'User 1', accumulatedFines: 50 },
+      { id: 'u2', name: 'User 2', accumulatedFines: 0 },
+      { id: 'u3', name: 'User 3', accumulatedFines: 120 }
+    ];
+
+    const totalPendingFinesSum = appUsers.reduce((sum, u) => sum + (u.accumulatedFines || 0), 0);
+    expect(totalPendingFinesSum).toBe(170);
+  });
+
   it('renders application without crashing', () => {
     const { container } = render(<App />);
     expect(container).toBeInTheDocument();

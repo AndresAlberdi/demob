@@ -130,6 +130,7 @@ export default function SupervisorDashboard() {
     if (!auditResult) return;
     setLoading(true);
     try {
+      // 1. Save the physical audit doc
       await addDoc(collection(db, 'inventory_audits'), {
         auditorName: currentUser?.name || currentUser?.email || 'Supervisor',
         auditorRole: currentUser?.role || 'supervisor',
@@ -139,13 +140,38 @@ export default function SupervisorDashboard() {
         timestamp: serverTimestamp()
       });
 
-      setMessage({ type: 'success', text: '✅ Arqueo de Inventario registrado exitosamente.' });
+      // 2. Also automatically report discrepancies as aggregated loss if there are faltantes
+      const discrepancies = auditResult.items.filter(item => item.difference < 0);
+      if (discrepancies.length > 0) {
+        await addDoc(collection(db, "losses"), {
+          isAggregatedAuditLoss: true,
+          items: discrepancies.map(item => ({
+            productId: item.productId,
+            productName: item.productName,
+            qty: Math.abs(item.difference),
+            costPrice: parseFloat(item.costPrice) || 0,
+            reason: 'Diferencia de Auditoría'
+          })),
+          qty: auditResult.totalFaltantes,
+          productName: `Arqueo en Bloque: ${discrepancies.length} productos con faltantes`,
+          reason: 'Descuadre de Auditoría',
+          vendorId: currentUser?.uid || currentUser?.id || 'Supervisor',
+          vendorName: currentUser?.name || currentUser?.email || 'Supervisor',
+          shiftId: 'supervisor_audit',
+          timestamp: serverTimestamp(),
+          status: 'pending'
+        });
+
+        await logEvent('AUDIT_LOSS_REPORTED_BY_SUPERVISOR', currentUser?.name || currentUser?.email, `Supervisor reportó pérdidas en bloque de auditoría: ${auditResult.totalFaltantes} unidades de ${discrepancies.length} productos`);
+      }
+
+      setMessage({ type: 'success', text: '✅ Arqueo de Inventario registrado y diferencias reportadas exitosamente.' });
       setAuditCounts({});
       setAuditResult(null);
       loadProductsAndAudits();
     } catch (err) {
-      console.error("Error saving audit:", err);
-      setMessage({ type: 'error', text: 'Error al guardar la revisión de inventarios.' });
+      console.error("Error saving audit & reporting losses:", err);
+      setMessage({ type: 'error', text: 'Error al guardar la revisión de inventarios y reportar pérdidas.' });
     } finally {
       setLoading(false);
     }
@@ -180,45 +206,6 @@ export default function SupervisorDashboard() {
     } catch (err) {
       console.error(err);
       setMessage({ type: 'error', text: 'Error al reportar la pérdida.' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleReportLossFromAudit = async () => {
-    if (!auditResult) return;
-    const discrepancies = auditResult.items.filter(item => item.difference < 0);
-    if (discrepancies.length === 0) {
-      alert("No hay diferencias faltantes que reportar como pérdida.");
-      return;
-    }
-    setLoading(true);
-    try {
-      await addDoc(collection(db, "losses"), {
-        isAggregatedAuditLoss: true,
-        items: discrepancies.map(item => ({
-          productId: item.productId,
-          productName: item.productName,
-          qty: Math.abs(item.difference),
-          reason: 'Diferencia de Auditoría'
-        })),
-        qty: auditResult.totalFaltantes,
-        productName: `Arqueo en Bloque: ${discrepancies.length} productos con faltantes`,
-        reason: 'Descuadre de Auditoría',
-        vendorId: currentUser?.uid || currentUser?.id || 'Supervisor',
-        vendorName: currentUser?.name || currentUser?.email || 'Supervisor',
-        shiftId: 'supervisor_audit',
-        timestamp: serverTimestamp(),
-        status: 'pending'
-      });
-
-      await logEvent('AUDIT_LOSS_REPORTED_BY_SUPERVISOR', currentUser?.name || currentUser?.email, `Supervisor reportó pérdidas en bloque de auditoría: ${auditResult.totalFaltantes} unidades de ${discrepancies.length} productos`);
-      alert("✅ Pérdidas en bloque reportadas con éxito y enviadas a administración.");
-      setAuditResult(null);
-      setAuditCounts({});
-    } catch (err) {
-      console.error(err);
-      alert("Error al reportar pérdidas de auditoría.");
     } finally {
       setLoading(false);
     }
@@ -431,21 +418,14 @@ export default function SupervisorDashboard() {
                   >
                     ✏️ Modificar Conteo
                   </button>
-                  {auditResult.totalFaltantes > 0 && (
-                    <button 
-                      onClick={handleReportLossFromAudit} 
-                      className="btn btn-danger"
-                      disabled={loading}
-                    >
-                      ⚠️ Reportar Faltantes como Pérdida
-                    </button>
-                  )}
                   <button 
                     onClick={saveAuditToFirestore} 
                     className="btn btn-primary"
                     disabled={loading}
                   >
-                    💾 Confirmar & Guardar Arqueo
+                    {auditResult.totalFaltantes > 0 
+                      ? '💾 Confirmar, Guardar & Reportar Faltantes' 
+                      : '💾 Confirmar & Guardar Arqueo'}
                   </button>
                 </div>
               </div>

@@ -186,10 +186,8 @@ const AdminDashboard = () => {
   const [fineHistory, setFineHistory] = useState([]);
   const [assignFineForm, setAssignFineForm] = useState({
     vendorId: '',
-    productId: '',
-    qty: 1,
     reason: '',
-    deductInventory: true
+    amount: ''
   });
 
   useEffect(() => {
@@ -768,26 +766,18 @@ const AdminDashboard = () => {
   // --- VENDOR LOSSES & FINES SYSTEM ---
   const assignVendorFine = async (e) => {
     e.preventDefault();
-    if (!assignFineForm.vendorId || !assignFineForm.productId) return alert("Selecciona vendedor y producto.");
-    const qty = parseInt(assignFineForm.qty, 10) || 1;
-    const product = products.find(p => p.id === assignFineForm.productId);
+    if (!assignFineForm.vendorId || !assignFineForm.reason || !assignFineForm.amount) return alert("Selecciona vendedor, motivo y monto.");
+    const fineAmount = parseFloat(assignFineForm.amount) || 0;
     const vendor = appUsers.find(u => u.id === assignFineForm.vendorId);
-    if (!product || !vendor) return alert("Vendedor o producto no encontrado.");
-
-    const purchasePrice = product.costPrice || Math.round((product.price || 0) * 0.8 * 100) / 100;
-    const fineAmount = qty * purchasePrice;
+    if (!vendor) return alert("Vendedor no encontrado.");
 
     setIsLoading(true);
     try {
       await addDoc(collection(db, "vendor_fines"), {
         vendorId: vendor.id,
         vendorName: vendor.name,
-        productId: product.id,
-        productName: product.name,
-        qty,
-        purchasePrice,
         fineAmount,
-        reason: assignFineForm.reason || 'Pérdida de producto',
+        reason: assignFineForm.reason,
         status: 'pending',
         timestamp: serverTimestamp()
       });
@@ -797,14 +787,9 @@ const AdminDashboard = () => {
         accumulatedFines: increment(fineAmount)
       });
 
-      if (assignFineForm.deductInventory) {
-        const pRef = doc(db, "products", product.id);
-        await updateDoc(pRef, { stock: increment(-qty) });
-      }
-
-      await logEvent('VENDOR_FINE_ASSIGNED', currentUser?.email, `Asignada multa a vendor "${vendor.name}": ${qty}x ${product.name} (Bs. ${fineAmount.toFixed(2)})${assignFineForm.deductInventory ? ' y descontado de inventario' : ''}`);
+      await logEvent('VENDOR_FINE_ASSIGNED', currentUser?.email, `Asignada multa a vendor "${vendor.name}": ${assignFineForm.reason} (Bs. ${fineAmount.toFixed(2)})`);
       alert(`Multa de Bs. ${fineAmount.toFixed(2)} asignada exitosamente a ${vendor.name}`);
-      setAssignFineForm({ vendorId: '', productId: '', qty: 1, reason: '', deductInventory: true });
+      setAssignFineForm({ vendorId: '', reason: '', amount: '' });
       loadData();
     } catch (err) {
       console.error(err);
@@ -1072,6 +1057,14 @@ const AdminDashboard = () => {
       console.error("Error calculating monthly best sellers:", e);
       return [];
     }
+  };
+
+  const calculateBlockLossTotalCost = (lossDoc) => {
+    if (!lossDoc || !lossDoc.items || !Array.isArray(lossDoc.items)) return 0;
+    return lossDoc.items.reduce((sum, item) => {
+      const price = parseFloat(item.costPrice) || parseFloat(products.find(p => p.id === item.productId)?.costPrice) || 0;
+      return sum + (price * (parseInt(item.qty, 10) || 0));
+    }, 0);
   };
 
   const { periodSales = [], periodOrders = [], periodLoans = [], periodLosses = [], periodExtraIncomes = [], checkTs = () => false } = getFilteredByPeriod();
@@ -2279,7 +2272,7 @@ const AdminDashboard = () => {
           <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
             {/* Form Assign Fine */}
             <div className="card glass-panel">
-              <h3>⚖️ Asignar Multa por Pérdida a Vendedor</h3>
+              <h3>⚖️ Asignar Multa a Vendedor</h3>
               <form onSubmit={assignVendorFine}>
                 <div className="form-group">
                   <label>Seleccionar Vendedor</label>
@@ -2295,52 +2288,29 @@ const AdminDashboard = () => {
                 </div>
 
                 <div className="form-group">
-                  <label>Seleccionar Producto Perdido</label>
-                  <select 
-                    className="input-field" 
-                    value={assignFineForm.productId} 
-                    onChange={e => setAssignFineForm({...assignFineForm, productId: e.target.value})} 
-                    required
-                  >
-                    <option value="">-- Seleccionar --</option>
-                    {products.filter(p => !p.isDeleted).map(p => {
-                      const cost = p.costPrice || Math.round((p.price || 0) * 0.8 * 100) / 100;
-                      return <option key={p.id} value={p.id}>{p.name} (Bs. {cost.toFixed(2)} cost)</option>;
-                    })}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Cantidad Perdida</label>
-                  <input 
-                    type="number" 
-                    min="1" 
-                    className="input-field" 
-                    value={assignFineForm.qty} 
-                    onChange={e => setAssignFineForm({...assignFineForm, qty: e.target.value})} 
-                    required 
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Motivo</label>
+                  <label>Motivo de la Multa</label>
                   <input 
                     type="text" 
                     className="input-field" 
-                    placeholder="Ej: Producto roto en turno" 
+                    placeholder="Ej: Faltante de dinero en caja" 
                     value={assignFineForm.reason} 
                     onChange={e => setAssignFineForm({...assignFineForm, reason: e.target.value})} 
+                    required
                   />
                 </div>
-                
-                <div className="form-group" style={{display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem'}}>
+
+                <div className="form-group">
+                  <label>Monto de la Multa (Bs.)</label>
                   <input 
-                    type="checkbox" 
-                    id="deductInventory"
-                    checked={assignFineForm.deductInventory}
-                    onChange={e => setAssignFineForm({...assignFineForm, deductInventory: e.target.checked})}
+                    type="number" 
+                    step="0.10"
+                    min="0.10"
+                    className="input-field" 
+                    placeholder="Ej: 50.00"
+                    value={assignFineForm.amount} 
+                    onChange={e => setAssignFineForm({...assignFineForm, amount: e.target.value})} 
+                    required 
                   />
-                  <label htmlFor="deductInventory" style={{margin: 0, cursor: 'pointer'}}>Descontar del inventario general</label>
                 </div>
 
                 <button type="submit" className="btn btn-danger btn-block" disabled={isLoading}>
@@ -2352,7 +2322,7 @@ const AdminDashboard = () => {
             {/* Accumulated Fines Summary */}
             <div className="card glass-panel">
               <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                <h3>💰 Saldo Acumulado de Multas por Vendedor</h3>
+                <h3>💰 Saldo Acumulado de Multas por Vendedor (Total Pendientes: Bs. {appUsers.reduce((sum, u) => sum + (u.accumulatedFines || 0), 0).toFixed(2)})</h3>
                 <button className="btn btn-secondary btn-sm" onClick={recalculateFines} disabled={isLoading}>
                   🔄 Recalcular Saldos
                 </button>
@@ -2399,9 +2369,7 @@ const AdminDashboard = () => {
                 <tr style={{borderBottom: '2px solid rgba(0,0,0,0.1)', textAlign: 'left'}}>
                   <th style={{padding: '0.5rem'}}>Fecha</th>
                   <th style={{padding: '0.5rem'}}>Vendedor</th>
-                  <th style={{padding: '0.5rem'}}>Producto</th>
-                  <th style={{padding: '0.5rem'}}>Cantidad</th>
-                  <th style={{padding: '0.5rem'}}>Precio Compra</th>
+                  <th style={{padding: '0.5rem'}}>Motivo / Detalle</th>
                   <th style={{padding: '0.5rem'}}>Monto Multa</th>
                   <th style={{padding: '0.5rem'}}>Estado</th>
                 </tr>
@@ -2414,9 +2382,7 @@ const AdminDashboard = () => {
                     <tr key={fine.id} style={{borderBottom: '1px solid rgba(0,0,0,0.05)'}}>
                       <td style={{padding: '0.5rem', fontSize: '0.85rem'}}>{dateStr}</td>
                       <td style={{padding: '0.5rem', fontWeight: '600'}}>{fine.vendorName}</td>
-                      <td style={{padding: '0.5rem'}}>{fine.productName}</td>
-                      <td style={{padding: '0.5rem'}}>{fine.qty} u.</td>
-                      <td style={{padding: '0.5rem'}}>Bs. {(fine.purchasePrice || 0).toFixed(2)}</td>
+                      <td style={{padding: '0.5rem'}}>{fine.reason}</td>
                       <td style={{padding: '0.5rem', fontWeight: '800', color: '#e7716d'}}>Bs. {(fine.fineAmount || 0).toFixed(2)}</td>
                       <td style={{padding: '0.5rem'}}>
                         {isCollected ? (
@@ -2430,7 +2396,7 @@ const AdminDashboard = () => {
                 })}
                 {fineHistory.length === 0 && (
                   <tr>
-                    <td colSpan="7" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>
+                    <td colSpan="5" style={{padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)'}}>
                       No hay historial de multas registrado.
                     </td>
                   </tr>
@@ -2569,27 +2535,50 @@ const AdminDashboard = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="dashboard-grid" style={{gridTemplateColumns: '1fr 2fr'}}>
             <div className="card glass-panel">
-              <h3>Nuevo Vendedor (PIN)</h3>
+              <h3>Nuevo Usuario / Personal (PIN)</h3>
               <form onSubmit={createUser}>
                 <div className="form-group">
-                  <label>Nombre del Vendedor</label>
+                  <label>Nombre Completo</label>
                   <input type="text" className="input-field" value={newUser.name} onChange={e=>setNewUser({...newUser, name: e.target.value})} required/>
+                </div>
+                <div className="form-group">
+                  <label>Rol de Usuario</label>
+                  <select 
+                    className="input-field" 
+                    value={newUser.role} 
+                    onChange={e => setNewUser({...newUser, role: e.target.value})}
+                  >
+                    <option value="vendedor">Vendedor</option>
+                    <option value="supervisor">Supervisor</option>
+                  </select>
                 </div>
                 <div className="form-group">
                   <label>PIN de Acceso (6 dígitos)</label>
                   <input type="text" className="input-field" maxLength="6" pattern="\d{6}" value={newUser.pin} onChange={e=>setNewUser({...newUser, pin: e.target.value})} required/>
                 </div>
-                <button type="submit" className="btn btn-primary btn-block">Registrar Vendedor</button>
+                <button type="submit" className="btn btn-primary btn-block">Registrar Usuario</button>
               </form>
             </div>
             
             <div className="card glass-panel">
-              <h3>Vendedores Registrados</h3>
+              <h3>Personal Registrado</h3>
               <div className="item-list">
                 {appUsers.map(u => (
                   <div key={u.id} className="list-item">
                     <div className="item-info">
-                      <h4>{u.name}</h4>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <h4 style={{ margin: 0 }}>{u.name}</h4>
+                        <span className="badge" style={{ 
+                          background: u.role === 'supervisor' ? 'var(--color-secundario-blue)' : 'var(--color-secundario-yellow)', 
+                          color: u.role === 'supervisor' ? '#ffffff' : 'var(--color-principal)',
+                          fontSize: '0.75rem',
+                          padding: '0.15rem 0.4rem',
+                          fontWeight: 'bold',
+                          borderRadius: '8px'
+                        }}>
+                          {u.role === 'supervisor' ? 'Supervisor' : 'Vendedor'}
+                        </span>
+                      </div>
                       {editingUser === u.id ? (
                         <input 
                           type="text" 
@@ -2601,7 +2590,7 @@ const AdminDashboard = () => {
                           placeholder="PIN"
                         />
                       ) : (
-                        <p>PIN: {u.pin}</p>
+                        <p style={{ margin: '0.25rem 0 0 0' }}>PIN: {u.pin}</p>
                       )}
                     </div>
                     <div style={{display: 'flex', gap: '0.5rem'}}>
@@ -2619,7 +2608,7 @@ const AdminDashboard = () => {
                     </div>
                   </div>
                 ))}
-                {appUsers.length === 0 && <p>No hay vendedores registrados.</p>}
+                {appUsers.length === 0 && <p>No hay usuarios registrados.</p>}
               </div>
             </div>
           </div>
@@ -2667,11 +2656,21 @@ const AdminDashboard = () => {
                   </div>
                   {loss.isAggregatedAuditLoss && Array.isArray(loss.items) && (
                     <div style={{ background: 'rgba(0,0,0,0.03)', padding: '0.5rem', borderRadius: '8px', width: '100%', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                      <strong>Detalle de productos faltantes:</strong>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                        <span>Detalle de productos faltantes:</span>
+                        <span style={{ color: 'var(--danger-color)' }}>
+                          Valor Total Costo: Bs. {calculateBlockLossTotalCost(loss).toFixed(2)}
+                        </span>
+                      </div>
                       <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0 }}>
-                        {loss.items.map(item => (
-                          <li key={item.productId}>{item.qty}x {item.productName}</li>
-                        ))}
+                        {loss.items.map(item => {
+                          const cost = parseFloat(item.costPrice) || parseFloat(products.find(p => p.id === item.productId || p.name === item.productName)?.costPrice) || 0;
+                          return (
+                            <li key={item.productId}>
+                              {item.qty}x {item.productName} (Bs. {cost.toFixed(2)} c/u - Total: Bs. {(cost * item.qty).toFixed(2)})
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   )}
@@ -2701,11 +2700,21 @@ const AdminDashboard = () => {
                   </div>
                   {loss.isAggregatedAuditLoss && Array.isArray(loss.items) && (
                     <div style={{ background: 'rgba(0,0,0,0.03)', padding: '0.5rem', borderRadius: '8px', width: '100%', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                      <strong>Detalle de productos:</strong>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                        <span>Detalle de productos:</span>
+                        <span style={{ color: 'var(--text-secondary)' }}>
+                          Valor Total Costo: Bs. {calculateBlockLossTotalCost(loss).toFixed(2)}
+                        </span>
+                      </div>
                       <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0 }}>
-                        {loss.items.map(item => (
-                          <li key={item.productId}>{item.qty}x {item.productName}</li>
-                        ))}
+                        {loss.items.map(item => {
+                          const cost = parseFloat(item.costPrice) || parseFloat(products.find(p => p.id === item.productId || p.name === item.productName)?.costPrice) || 0;
+                          return (
+                            <li key={item.productId}>
+                              {item.qty}x {item.productName} (Bs. {cost.toFixed(2)} c/u - Total: Bs. {(cost * item.qty).toFixed(2)})
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   )}
