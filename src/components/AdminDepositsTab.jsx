@@ -128,16 +128,16 @@ export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits
       <div className="card glass-panel">
         <h3>Historial de Depósitos</h3>
         <div style={{overflowX: 'auto'}}>
-          <table className="table">
+          <table className="table" style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 8px' }}>
             <thead>
               <tr>
-                <th>Fecha</th>
-                <th>Usuario</th>
-                <th>Banco / Cuenta</th>
-                <th>Observaciones</th>
-                <th style={{textAlign: 'right'}}>Monto</th>
-                <th style={{textAlign: 'center'}}>Estado</th>
-                <th style={{textAlign: 'center'}}>Acciones</th>
+                <th style={{ padding: '12px' }}>Fecha</th>
+                <th style={{ padding: '12px' }}>Usuario</th>
+                <th style={{ padding: '12px' }}>Banco / Cuenta</th>
+                <th style={{ padding: '12px' }}>Observaciones</th>
+                <th style={{ textAlign: 'right', padding: '12px' }}>Monto</th>
+                <th style={{ textAlign: 'center', padding: '12px' }}>Estado</th>
+                <th style={{ textAlign: 'center', padding: '12px' }}>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -145,27 +145,31 @@ export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits
                 const isConfirmed = d.status === 'CONFIRMADO';
                 const dateStr = d.createdAt?.toDate ? d.createdAt.toDate().toLocaleString() : 'Reciente';
                 return (
-                  <tr key={d.id}>
-                    <td>{dateStr}</td>
-                    <td>{d.createdBy}</td>
-                    <td>{d.bankName}</td>
-                    <td>{d.observations || '-'}</td>
-                    <td style={{textAlign: 'right', fontWeight: 'bold'}}>Bs. {parseFloat(d.amount).toFixed(2)}</td>
-                    <td style={{textAlign: 'center'}}>
+                  <tr key={d.id} style={{ backgroundColor: 'var(--bg-card)' }}>
+                    <td style={{ padding: '12px' }}>{dateStr}</td>
+                    <td style={{ padding: '12px' }}>{d.createdBy}</td>
+                    <td style={{ padding: '12px' }}>{d.bankName}</td>
+                    <td style={{ padding: '12px' }}>{d.observations || '-'}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 'bold', padding: '12px' }}>Bs. {parseFloat(d.amount).toFixed(2)}</td>
+                    <td style={{ textAlign: 'center', padding: '12px' }}>
                       <span style={{
-                        padding: '0.25rem 0.5rem', 
-                        borderRadius: '4px', 
-                        fontSize: '0.8rem',
-                        backgroundColor: isConfirmed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                        color: isConfirmed ? 'var(--color-green)' : 'var(--color-yellow)'
+                        padding: '0.4rem 0.8rem', 
+                        borderRadius: '20px', 
+                        fontSize: '0.85rem',
+                        fontWeight: '500',
+                        backgroundColor: isConfirmed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                        color: isConfirmed ? 'var(--color-green)' : 'var(--color-yellow)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
                       }}>
-                        {isConfirmed ? <CheckCircle size={14} style={{display: 'inline', verticalAlign: 'middle', marginRight: '2px'}}/> : <Clock size={14} style={{display: 'inline', verticalAlign: 'middle', marginRight: '2px'}}/>}
+                        {isConfirmed ? <CheckCircle size={14}/> : <Clock size={14}/>}
                         {d.status}
                       </span>
                     </td>
-                    <td style={{textAlign: 'center'}}>
-                      {!isConfirmed && (userRole === 'superadmin' || d.createdBy === currentUser?.name) && (
-                        <button className="btn btn-sm" onClick={() => handleConfirmDeposit(d.id)} style={{backgroundColor: 'var(--color-green)', color: 'white'}}>
+                    <td style={{ textAlign: 'center', padding: '12px' }}>
+                      {!isConfirmed && (userRole === 'superadmin' || d.createdBy === currentUser?.name || d.createdBy === currentUser?.email) && (
+                        <button className="btn btn-sm" onClick={() => handleConfirmDeposit(d.id)} style={{ backgroundColor: 'var(--color-green)', color: 'white', fontWeight: 'bold', padding: '0.4rem 1rem' }}>
                           Confirmar
                         </button>
                       )}
