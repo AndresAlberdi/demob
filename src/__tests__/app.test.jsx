@@ -66,9 +66,9 @@ describe('Wally La Estación UI & Authentication Unit Tests', () => {
       </BrowserRouter>
     );
 
-    // Switch to Admin tab
-    const adminTab = screen.getByText('Admin');
-    fireEvent.click(adminTab);
+    // Switch to Superadmin tab
+    const superadminTab = screen.getByTitle('Superadmin');
+    fireEvent.click(superadminTab);
 
     const emailInput = screen.getByPlaceholderText('admin@demo.com');
     const passwordInput = screen.getByPlaceholderText('••••••••');

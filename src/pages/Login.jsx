@@ -85,11 +85,11 @@ const Login = () => {
           <div className={`tab ${loginMethod === 'supervisor' ? 'active' : ''}`} onClick={() => setLoginMethod('supervisor')} style={{fontSize: '0.85rem', padding: '0.5rem'}}>
             <KeyRound size={14} style={{display: 'inline', marginRight: '0.25rem'}}/> Supervisor
           </div>
-          <div className={`tab ${loginMethod === 'email' ? 'active' : ''}`} onClick={() => setLoginMethod('email')} style={{fontSize: '0.85rem', padding: '0.5rem'}}>
-            <UserCircle size={14} style={{display: 'inline', marginRight: '0.25rem'}}/> Admin
+          <div className={`tab ${loginMethod === 'admin' ? 'active' : ''}`} onClick={() => setLoginMethod('admin')} style={{fontSize: '0.85rem', padding: '0.5rem'}}>
+            <KeyRound size={14} style={{display: 'inline', marginRight: '0.25rem'}}/> Admin
           </div>
           <div className={`tab ${loginMethod === 'superadmin' ? 'active' : ''}`} onClick={() => setLoginMethod('superadmin')} style={{fontSize: '0.85rem', padding: '0.5rem', cursor: 'pointer'}} title="Superadmin">
-            ⭐️
+            ⚙️
           </div>
         </div>
 
@@ -98,7 +98,7 @@ const Login = () => {
         {/* Admin Form (Always in DOM for Chrome Password Manager detection) */}
         <form 
           onSubmit={handleEmailSubmit} 
-          style={{ display: (loginMethod === 'email' || loginMethod === 'superadmin') ? 'block' : 'none' }}
+          style={{ display: loginMethod === 'superadmin' ? 'block' : 'none' }}
         >
           <div className="form-group">
             <label htmlFor="admin-email">Correo Electrónico</label>
@@ -109,7 +109,7 @@ const Login = () => {
               className="input-field" 
               placeholder="admin@demo.com"
               autoComplete="username"
-              required={loginMethod === 'email' || loginMethod === 'superadmin'}
+              required={loginMethod === 'superadmin'}
             />
           </div>
           
@@ -122,7 +122,7 @@ const Login = () => {
               className="input-field" 
               placeholder="••••••••"
               autoComplete="current-password"
-              required={loginMethod === 'email' || loginMethod === 'superadmin'}
+              required={loginMethod === 'superadmin'}
             />
           </div>
           
@@ -134,7 +134,7 @@ const Login = () => {
             {isSubmitting ? (
               <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>
             ) : (
-              loginMethod === 'superadmin' ? 'Ingresar como Superadmin' : 'Ingresar como Admin'
+              'Ingresar como Superadmin'
             )}
           </button>
         </form>
@@ -142,7 +142,7 @@ const Login = () => {
         {/* PIN Form */}
         <form 
           onSubmit={handlePinSubmit}
-          style={{ display: (loginMethod === 'pin' || loginMethod === 'supervisor') ? 'block' : 'none' }}
+          style={{ display: (loginMethod === 'pin' || loginMethod === 'supervisor' || loginMethod === 'admin') ? 'block' : 'none' }}
         >
           <div className="form-group">
             <label htmlFor="vendor-pin">PIN de Acceso</label>
@@ -155,7 +155,7 @@ const Login = () => {
               onChange={(e) => setPin(e.target.value)}
               placeholder="••••••"
               maxLength="6"
-              required={loginMethod === 'pin' || loginMethod === 'supervisor'}
+              required={loginMethod === 'pin' || loginMethod === 'supervisor' || loginMethod === 'admin'}
               style={{textAlign: 'center', fontSize: '1.25rem', letterSpacing: '0.25rem'}}
             />
           </div>
@@ -168,7 +168,7 @@ const Login = () => {
             {isSubmitting ? (
               <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>
             ) : (
-              loginMethod === 'supervisor' ? 'Ingresar como Supervisor' : 'Ingresar al POS'
+              loginMethod === 'admin' ? 'Ingresar como Administrador' : (loginMethod === 'supervisor' ? 'Ingresar como Supervisor' : 'Ingresar al POS')
             )}
           </button>
         </form>
