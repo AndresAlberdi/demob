@@ -95,7 +95,7 @@ const HelpTooltip = ({ title, text, example }) => {
 };
 
 const AdminDashboard = () => {
-  const { logout, currentUser } = useAuth();
+  const { logout, currentUser, userRole } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('reports'); // reports, inventory, shifts, users, losses, logs
   const [isLoading, setIsLoading] = useState(false);
@@ -255,9 +255,27 @@ const AdminDashboard = () => {
     amount: ''
   });
 
+  // 5. Deposits & Banks Module
+  const [banks, setBanks] = useState([]);
+  const [deposits, setDeposits] = useState([]);
+
   useEffect(() => {
     loadData();
+    loadBanksAndDeposits();
   }, [currentUser]);
+
+  const loadBanksAndDeposits = async () => {
+    try {
+      const [banksSnap, depositsSnap] = await Promise.all([
+        getDocs(query(collection(db, "banks"))),
+        getDocs(query(collection(db, "deposits"), orderBy("createdAt", "desc")))
+      ]);
+      setBanks(banksSnap.docs.map(d => ({id: d.id, ...d.data()})));
+      setDeposits(depositsSnap.docs.map(d => ({id: d.id, ...d.data()})));
+    } catch (error) {
+      console.error("Error loading banks/deposits:", error);
+    }
+  };
 
   const loadData = async () => {
     setIsLoading(true);
@@ -1111,17 +1129,19 @@ const AdminDashboard = () => {
       const safeLoans = Array.isArray(loans) ? loans : [];
       const safeLosses = Array.isArray(allLosses) ? allLosses : [];
       const safeExtras = Array.isArray(extraIncomes) ? extraIncomes : [];
+      const safeDeposits = Array.isArray(deposits) ? deposits : [];
 
       const periodSales = safeSales.filter(s => checkTs(s?.timestamp));
       const periodOrders = safeOrders.filter(o => checkTs(o?.timestamp));
       const periodLoans = safeLoans.filter(l => checkTs(l?.timestamp) || checkTs(l?.repaidAt));
       const periodLosses = safeLosses.filter(l => checkTs(l?.timestamp));
       const periodExtraIncomes = safeExtras.filter(i => checkTs(i?.timestamp));
+      const periodDeposits = safeDeposits.filter(d => checkTs(d?.createdAt));
 
-      return { periodSales, periodOrders, periodLoans, periodLosses, periodExtraIncomes, checkTs };
+      return { periodSales, periodOrders, periodLoans, periodLosses, periodExtraIncomes, periodDeposits, checkTs };
     } catch (e) {
       console.error("Error filtering by period:", e);
-      return { periodSales: [], periodOrders: [], periodLoans: [], periodLosses: [], periodExtraIncomes: [], checkTs: () => false };
+      return { periodSales: [], periodOrders: [], periodLoans: [], periodLosses: [], periodExtraIncomes: [], periodDeposits: [], checkTs: () => false };
     }
   };
 
@@ -1177,7 +1197,7 @@ const AdminDashboard = () => {
     }, 0);
   };
 
-  const { periodSales = [], periodOrders = [], periodLoans = [], periodLosses = [], periodExtraIncomes = [], checkTs = () => false } = getFilteredByPeriod();
+  const { periodSales = [], periodOrders = [], periodLoans = [], periodLosses = [], periodExtraIncomes = [], periodDeposits = [], checkTs = () => false } = getFilteredByPeriod();
 
   // Metrics based on period
   const pCashSales = periodSales.reduce((acc, s) => {
