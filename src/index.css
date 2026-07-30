@@ -21,6 +21,19 @@
   --danger-color: #e7716d;
   --border-color: #cbd5e1;
   
+  /* Status Colors */
+  --color-green: #16a34a;
+  --color-blue: #2563eb;
+  --color-red: #dc2626;
+  --color-yellow: #ca8a04;
+  --color-guindo: #9f1239;
+  
+  --card-bg-verde: #e6f7e9;
+  --card-bg-azul: #e6f0fa;
+  --card-bg-rojo: #fae6e6;
+  --card-bg-amarillo: #fbf7e1;
+  --card-bg-guindo: #f7e6ec;
+  
   /* Glassmorphism */
   --glass-bg: rgba(255, 255, 255, 0.92);
   --glass-border: rgba(10, 19, 124, 0.15);
@@ -59,6 +72,19 @@
   --text-muted: #94a3b8;
   --danger-color: #e7716d;
   --border-color: rgba(39, 108, 211, 0.3);
+  
+  /* Status Colors */
+  --color-green: #4ade80;
+  --color-blue: #60a5fa;
+  --color-red: #f87171;
+  --color-yellow: #facc15;
+  --color-guindo: #fb7185;
+  
+  --card-bg-verde: rgba(22, 163, 74, 0.15);
+  --card-bg-azul: rgba(37, 99, 235, 0.15);
+  --card-bg-rojo: rgba(220, 38, 38, 0.15);
+  --card-bg-amarillo: rgba(202, 138, 4, 0.15);
+  --card-bg-guindo: rgba(159, 18, 57, 0.15);
   
   /* Glassmorphism */
   --glass-bg: rgba(10, 19, 124, 0.65);

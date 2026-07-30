@@ -1365,7 +1365,7 @@ const AdminDashboard = () => {
                 {cardOrder.map(cardId => {
                   if (cardId === 'cashSales') {
                     return (
-                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-green)'}}>
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{background: 'var(--card-bg-verde)', borderLeft: '4px solid var(--color-green)'}}>
                         <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
                           <span>💵 Ventas Efectivo</span>
                           <HelpTooltip 
@@ -1380,7 +1380,7 @@ const AdminDashboard = () => {
                   }
                   if (cardId === 'qrSales') {
                     return (
-                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-blue)'}}>
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{background: 'var(--card-bg-azul)', borderLeft: '4px solid var(--color-blue)'}}>
                         <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
                           <span>📱 Ventas QR</span>
                           <HelpTooltip 
@@ -1395,7 +1395,7 @@ const AdminDashboard = () => {
                   }
                   if (cardId === 'purchases') {
                     return (
-                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-red)'}}>
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{background: 'var(--card-bg-rojo)', borderLeft: '4px solid var(--color-red)'}}>
                         <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
                           <span>🛒 Compras / Egresos</span>
                           <HelpTooltip 
@@ -1410,7 +1410,7 @@ const AdminDashboard = () => {
                   }
                   if (cardId === 'loans') {
                     return (
-                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-guindo)'}}>
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{background: 'var(--card-bg-guindo)', borderLeft: '4px solid var(--color-guindo)'}}>
                         <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
                           <span>🔄 Cobro Préstamos</span>
                           <HelpTooltip 
@@ -1425,7 +1425,7 @@ const AdminDashboard = () => {
                   }
                   if (cardId === 'extraIncome') {
                     return (
-                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-green)'}}>
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{background: 'var(--card-bg-verde)', borderLeft: '4px solid var(--color-green)'}}>
                         <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
                           <span>➕ Ingresos Adicionales</span>
                           <HelpTooltip 
@@ -1440,7 +1440,7 @@ const AdminDashboard = () => {
                   }
                   if (cardId === 'netCashFlow') {
                     return (
-                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-yellow)'}}>
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{background: 'var(--card-bg-amarillo)', borderLeft: '4px solid var(--color-yellow)'}}>
                         <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
                           <span>💰 Flujo Neto Efectivo</span>
                           <HelpTooltip 
@@ -1455,7 +1455,7 @@ const AdminDashboard = () => {
                   }
                   if (cardId === 'totalIncome') {
                     return (
-                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-green)'}}>
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{background: 'var(--card-bg-verde)', borderLeft: '4px solid var(--color-green)'}}>
                         <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
                           <span>📈 Ingresos Totales</span>
                           <HelpTooltip 
