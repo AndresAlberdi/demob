@@ -51,7 +51,7 @@ export const AuthProvider = ({ children }) => {
           user.email === 'admin@demob.com' ||
           user.email === adminEmailEnv
         ) {
-          setUserRole('admin');
+          setUserRole('superadmin');
         } else {
           // Fetch role from firestore if needed for other email users
           try {

@@ -439,6 +439,10 @@ const VendorDashboard = () => {
   };
   
   const clearCart = () => setCart([]);
+
+  const removeFromCart = (productId) => {
+    setCart(cart.filter(item => item.id !== productId));
+  };
   
   const processSale = async (method, customCashPaid = null, customQrPaid = null) => {
     if (cart.length === 0) return;
@@ -1079,8 +1083,11 @@ const VendorDashboard = () => {
                         <h4 style={{fontSize: '0.9rem'}}>{item.name}</h4>
                         <p style={{fontSize: '0.8rem'}}>{item.qty} x Bs. {(parseFloat(item.price) || 0).toFixed(2)}</p>
                       </div>
-                      <div className="item-action" style={{fontSize: '0.9rem'}}>
-                        Bs. {((item.qty || 1) * (parseFloat(item.price) || 0)).toFixed(2)}
+                      <div className="item-action" style={{fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                        <span>Bs. {((item.qty || 1) * (parseFloat(item.price) || 0)).toFixed(2)}</span>
+                        <button onClick={() => removeFromCart(item.id)} style={{background: 'none', border: 'none', color: 'var(--color-red)', cursor: 'pointer', padding: '0.25rem'}} title="Eliminar producto">
+                          <X size={16} />
+                        </button>
                       </div>
                     </div>
                   ))}

@@ -40,7 +40,7 @@ const adminPassword = process.env.ADMIN_PASSWORD || 'Admin*123';
 async function createAdmin() {
   try {
     const cred = await createUserWithEmailAndPassword(auth, adminEmail, adminPassword);
-    await setDoc(doc(db, 'users', cred.user.uid), { role: 'admin', email: adminEmail });
+    await setDoc(doc(db, 'users', cred.user.uid), { role: 'superadmin', email: adminEmail });
     console.log('Admin user created successfully');
     await signOut(auth);
     process.exit(0);
@@ -50,7 +50,7 @@ async function createAdmin() {
       try {
         const cred = await signInWithEmailAndPassword(auth, adminEmail, 'admin123');
         await updatePassword(cred.user, adminPassword);
-        await setDoc(doc(db, 'users', cred.user.uid), { role: 'admin', email: adminEmail });
+        await setDoc(doc(db, 'users', cred.user.uid), { role: 'superadmin', email: adminEmail });
         console.log(`Admin password updated to ${adminPassword} and role updated.`);
         process.exit(0);
       } catch (innerErr) {
@@ -59,7 +59,7 @@ async function createAdmin() {
             console.error('Failed to log in with any known password:', e.message);
             process.exit(1);
         });
-        await setDoc(doc(db, 'users', cred.user.uid), { role: 'admin', email: adminEmail });
+        await setDoc(doc(db, 'users', cred.user.uid), { role: 'superadmin', email: adminEmail });
         console.log(`Admin role updated (password was already ${adminPassword}).`);
         process.exit(0);
       }

@@ -6,13 +6,17 @@ service cloud.firestore {
       return request.auth != null;
     }
     
-    function isAdmin() {
+    function isSuperAdmin() {
       return isAuthenticated() && (
         request.auth.token.email == 'pretsodatabase@gmail.com' ||
         request.auth.token.email == 'mrwally@snack.com' ||
         request.auth.token.email == 'admin@demob.com' ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin'
       );
+    }
+
+    function isAdmin() {
+      return isSuperAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
     
     // For Demo B, we allow authenticated users (including anonymous PIN users)

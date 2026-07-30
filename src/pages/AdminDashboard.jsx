@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { SortableTab } from '../components/SortableTab';
+import { SortableCard } from '../components/SortableCard';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { collection, query, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy, serverTimestamp, increment } from 'firebase/firestore';
@@ -119,6 +124,63 @@ const AdminDashboard = () => {
 
   // CSV Form State
   const [csvHasHeader, setCsvHasHeader] = useState(true);
+
+  // DnD state for tabs
+  const defaultTabs = [
+    { id: 'reports', label: '🟢 Reportes Financieros' },
+    { id: 'inventory', label: '🔵 Inventario', restricted: true },
+    { id: 'purchases', label: '🔵 Compra de Productos' },
+    { id: 'expense_types', label: '🟠 Tipos de Egresos' },
+    { id: 'extraordinary_motives', label: '🟠 Motivos Ingresos Extra' },
+    { id: 'vendor_fines', label: '🔵 Multas a Vendedores', restricted: true },
+    { id: 'shifts', label: '🟣 Turnos' },
+    { id: 'users', label: '🟣 Usuarios', restricted: true },
+    { id: 'losses', label: '🔴 Pérdidas' },
+    { id: 'logs', label: '🟣 Logs y Backup' },
+    { id: 'deposits', label: '🟢 Depósitos en Banco' }
+  ];
+  const [tabOrder, setTabOrder] = useState(() => {
+    const saved = localStorage.getItem('adminTabOrder');
+    return saved ? JSON.parse(saved) : defaultTabs.map(t => t.id);
+  });
+  
+  // DnD state for cards
+  const defaultCards = ['cashSales', 'qrSales', 'purchases', 'loans', 'extraIncome', 'totalIncome', 'netCashFlow'];
+  const [cardOrder, setCardOrder] = useState(() => {
+    const saved = localStorage.getItem('adminCardOrder');
+    return saved ? JSON.parse(saved) : defaultCards;
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEndTabs = (event) => {
+    const { active, over } = event;
+    if (active.id !== over.id) {
+      setTabOrder((items) => {
+        const oldIndex = items.indexOf(active.id);
+        const newIndex = items.indexOf(over.id);
+        const newOrder = arrayMove(items, oldIndex, newIndex);
+        localStorage.setItem('adminTabOrder', JSON.stringify(newOrder));
+        return newOrder;
+      });
+    }
+  };
+
+  const handleDragEndCards = (event) => {
+    const { active, over } = event;
+    if (active.id !== over.id) {
+      setCardOrder((items) => {
+        const oldIndex = items.indexOf(active.id);
+        const newIndex = items.indexOf(over.id);
+        const newOrder = arrayMove(items, oldIndex, newIndex);
+        localStorage.setItem('adminCardOrder', JSON.stringify(newOrder));
+        return newOrder;
+      });
+    }
+  };
   
   // Extra Income Form State
   const [extraIncomeForm, setExtraIncomeForm] = useState({
@@ -1210,38 +1272,32 @@ const AdminDashboard = () => {
           </div>
         </div>
         
-        <div className="tabs" style={{flexWrap: 'wrap'}}>
-          <div className={`tab ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}>
-            <BarChart3 size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Reportes Financieros
-          </div>
-          <div className={`tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>
-            <Package size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Inventario ({products.length})
-          </div>
-          <div className={`tab ${activeTab === 'purchases' ? 'active' : ''}`} onClick={() => setActiveTab('purchases')}>
-            🛒 Compra de Productos
-          </div>
-          <div className={`tab ${activeTab === 'expense_types' ? 'active' : ''}`} onClick={() => setActiveTab('expense_types')}>
-            📋 Tipos de Egresos ({expenseTypes.length})
-          </div>
-          <div className={`tab ${activeTab === 'extraordinary_motives' ? 'active' : ''}`} onClick={() => setActiveTab('extraordinary_motives')}>
-            💵 Motivos Ingresos Extra ({extraordinaryMotives.length})
-          </div>
-          <div className={`tab ${activeTab === 'vendor_fines' ? 'active' : ''}`} onClick={() => setActiveTab('vendor_fines')}>
-            ⚖️ Multas a Vendedores ({appUsers.reduce((sum, u) => sum + (u.accumulatedFines || 0), 0) > 0 ? 'Con pendientes' : 'Al día'})
-          </div>
-          <div className={`tab ${activeTab === 'shifts' ? 'active' : ''}`} onClick={() => setActiveTab('shifts')}>
-            <Clock size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Turnos
-          </div>
-          <div className={`tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
-            <Users size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Vendedores ({appUsers.length})
-          </div>
-          <div className={`tab ${activeTab === 'losses' ? 'active' : ''}`} onClick={() => setActiveTab('losses')}>
-            <ShieldAlert size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Pérdidas ({pendingLosses.length})
-          </div>
-          <div className={`tab ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
-            <FileText size={16} style={{display: 'inline', marginRight: '0.25rem'}}/> Logs y Backup
-          </div>
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndTabs}>
+          <SortableContext items={tabOrder} strategy={rectSortingStrategy}>
+            <div className="tabs" style={{flexWrap: 'wrap'}}>
+              {tabOrder.map(tabId => {
+                const tab = defaultTabs.find(t => t.id === tabId);
+                if (!tab) return null;
+                if (tab.restricted && userRole === 'admin') return null; // restrict some tabs for admin
+                return (
+                  <SortableTab 
+                    key={tabId} 
+                    id={tabId} 
+                    isActive={activeTab === tabId} 
+                    onClick={() => setActiveTab(tabId)}
+                  >
+                    {tab.label} {tab.id === 'inventory' ? `(${products.length})` : 
+                               tab.id === 'expense_types' ? `(${expenseTypes.length})` :
+                               tab.id === 'extraordinary_motives' ? `(${extraordinaryMotives.length})` :
+                               tab.id === 'vendor_fines' ? `(${appUsers.reduce((sum, u) => sum + (u.accumulatedFines || 0), 0) > 0 ? 'Con pendientes' : 'Al día'})` :
+                               tab.id === 'users' ? `(${appUsers.length})` :
+                               tab.id === 'losses' ? `(${pendingLosses.length})` : ''}
+                  </SortableTab>
+                );
+              })}
+            </div>
+          </SortableContext>
+        </DndContext>
       
       {isLoading && <div className="flex-center" style={{padding: '2rem'}}>Cargando...</div>}
       
@@ -1273,91 +1329,120 @@ const AdminDashboard = () => {
           </div>
 
           {/* Dynamic Financial Summary Cards */}
-          <div className="dashboard-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))'}}>
-            <div className="card glass-panel" style={{borderLeft: '4px solid #10b981'}}>
-              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
-                <span>💵 Ventas Efectivo</span>
-                <HelpTooltip 
-                  title="Ventas Cobradas en Billetes/Monedas" 
-                  text="Suma de las ventas pagadas en efectivo durante el período seleccionado."
-                  example="Si vendiste 2 gaseosas a Bs. 5.50 en efectivo, aquí suma Bs. 11.00."
-                />
-              </h3>
-              <div className="card-value">Bs. {pCashSales.toFixed(2)}</div>
-            </div>
-
-            <div className="card glass-panel" style={{borderLeft: '4px solid #3b82f6'}}>
-              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
-                <span>📱 Ventas QR</span>
-                <HelpTooltip 
-                  title="Ventas Transferencia / Código QR" 
-                  text="Monto ingresado directamente a la cuenta bancaria. No afecta los billetes en caja."
-                  example="Si un cliente te transfirió Bs. 6.50 por QR, ingresa al banco y se suma aquí."
-                />
-              </h3>
-              <div className="card-value">Bs. {pQRSales.toFixed(2)}</div>
-            </div>
-
-            <div className="card glass-panel" style={{borderLeft: '4px solid #ef4444'}}>
-              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
-                <span>🛒 Compras / Egresos</span>
-                <HelpTooltip 
-                  title="Egresos y Compras en Efectivo" 
-                  text="Pagos realizados con dinero de la caja registradora (proveedores o gastos)."
-                  example="Pagaste Bs. 20.00 en efectivo por recarga de insumos a un proveedor."
-                />
-              </h3>
-              <div className="card-value">Bs. {pPurchases.toFixed(2)}</div>
-            </div>
-
-            <div className="card glass-panel" style={{borderLeft: '4px solid #8b5cf6'}}>
-              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
-                <span>🔄 Cobro Préstamos</span>
-                <HelpTooltip 
-                  title="Cobros de Deudas / Fiados" 
-                  text="Dinero recuperado por pago de fiados o préstamos registrados anteriormente."
-                  example="Un cliente devuelve Bs. 15.00 que debía en efectivo."
-                />
-              </h3>
-              <div className="card-value">Bs. {pLoanRepayments.toFixed(2)}</div>
-            </div>
-
-            <div className="card glass-panel" style={{borderLeft: '4px solid #14b8a6'}}>
-              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
-                <span>➕ Ingresos Adicionales</span>
-                <HelpTooltip 
-                  title="Ingresos Extraordinarios y Aportes" 
-                  text="Ingresos en caja no provenientes de la venta directa de productos en catálogo."
-                  example="Reembolso de Bs. 8.00 del distribuidor por envases o aporte a caja."
-                />
-              </h3>
-              <div className="card-value">Bs. {(pExtraCash + pExtraQR).toFixed(2)}</div>
-            </div>
-
-            <div className="card glass-panel" style={{borderLeft: '4px solid #f59e0b'}}>
-              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
-                <span>💰 Flujo Neto Efectivo</span>
-                <HelpTooltip 
-                  title="Flujo Neto de Efectivo del Período" 
-                  text="Saldo acumulado de billetes generados netos en el período (Ventas Ef + Cobros - Egresos). Difiere de la 'Caja Actual' porque esta última incluye el Dinero Inicial de Apertura."
-                  example="Si cobraste Bs. 11.00 en ventas y Bs. 8.00 extra sin gastos, el flujo neto de hoy es Bs. 19.00."
-                />
-              </h3>
-              <div className="card-value">Bs. {pCashBalance.toFixed(2)}</div>
-            </div>
-
-            <div className="card glass-panel" style={{borderLeft: '4px solid #06b6d4'}}>
-              <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
-                <span>📈 Ingresos Totales</span>
-                <HelpTooltip 
-                  title="Ingresos Brutos Combinados (Efectivo + QR)" 
-                  text="Suma total de todas las entradas financieras directas (Ventas Efectivo + QR + Extras). Excluye cobros de préstamos para evitar duplicidades."
-                  example="Suma total de Bs. 11.00 (Ef) + Bs. 6.50 (QR) + Bs. 13.00 (Extras) = Bs. 30.50."
-                />
-              </h3>
-              <div className="card-value">Bs. {pTotalIncome.toFixed(2)}</div>
-            </div>
-          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndCards}>
+            <SortableContext items={cardOrder} strategy={rectSortingStrategy}>
+              <div className="dashboard-grid" style={{gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))'}}>
+                {cardOrder.map(cardId => {
+                  if (cardId === 'cashSales') {
+                    return (
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-green)'}}>
+                        <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                          <span>💵 Ventas Efectivo</span>
+                          <HelpTooltip 
+                            title="Ventas Cobradas en Billetes/Monedas" 
+                            text="Suma de las ventas pagadas en efectivo durante el período seleccionado."
+                            example="Si vendiste 2 gaseosas a Bs. 5.50 en efectivo, aquí suma Bs. 11.00."
+                          />
+                        </h3>
+                        <div className={`card-value ${pCashSales < 0 ? 'negative-value' : ''}`}>Bs. {pCashSales.toFixed(2)}</div>
+                      </SortableCard>
+                    );
+                  }
+                  if (cardId === 'qrSales') {
+                    return (
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-blue)'}}>
+                        <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                          <span>📱 Ventas QR</span>
+                          <HelpTooltip 
+                            title="Ventas Transferencia / Código QR" 
+                            text="Monto ingresado directamente a la cuenta bancaria. No afecta los billetes en caja."
+                            example="Si un cliente te transfirió Bs. 6.50 por QR, ingresa al banco y se suma aquí."
+                          />
+                        </h3>
+                        <div className={`card-value ${pQRSales < 0 ? 'negative-value' : ''}`}>Bs. {pQRSales.toFixed(2)}</div>
+                      </SortableCard>
+                    );
+                  }
+                  if (cardId === 'purchases') {
+                    return (
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-red)'}}>
+                        <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                          <span>🛒 Compras / Egresos</span>
+                          <HelpTooltip 
+                            title="Egresos y Compras en Efectivo" 
+                            text="Pagos realizados con dinero de la caja registradora (proveedores o gastos)."
+                            example="Pagaste Bs. 20.00 en efectivo por recarga de insumos a un proveedor."
+                          />
+                        </h3>
+                        <div className={`card-value ${pPurchases < 0 ? 'negative-value' : ''}`}>Bs. {pPurchases.toFixed(2)}</div>
+                      </SortableCard>
+                    );
+                  }
+                  if (cardId === 'loans') {
+                    return (
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-guindo)'}}>
+                        <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                          <span>🔄 Cobro Préstamos</span>
+                          <HelpTooltip 
+                            title="Cobros de Deudas / Fiados" 
+                            text="Dinero recuperado por pago de fiados o préstamos registrados anteriormente."
+                            example="Un cliente devuelve Bs. 15.00 que debía en efectivo."
+                          />
+                        </h3>
+                        <div className={`card-value ${pLoanRepayments < 0 ? 'negative-value' : ''}`}>Bs. {pLoanRepayments.toFixed(2)}</div>
+                      </SortableCard>
+                    );
+                  }
+                  if (cardId === 'extraIncome') {
+                    return (
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-green)'}}>
+                        <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                          <span>➕ Ingresos Adicionales</span>
+                          <HelpTooltip 
+                            title="Ingresos Extraordinarios y Aportes" 
+                            text="Ingresos en caja no provenientes de la venta directa de productos en catálogo."
+                            example="Reembolso de Bs. 8.00 del distribuidor por envases o aporte a caja."
+                          />
+                        </h3>
+                        <div className={`card-value ${(pExtraCash + pExtraQR) < 0 ? 'negative-value' : ''}`}>Bs. {(pExtraCash + pExtraQR).toFixed(2)}</div>
+                      </SortableCard>
+                    );
+                  }
+                  if (cardId === 'netCashFlow') {
+                    return (
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-yellow)'}}>
+                        <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                          <span>💰 Flujo Neto Efectivo</span>
+                          <HelpTooltip 
+                            title="Flujo Neto de Efectivo del Período" 
+                            text="Saldo acumulado de billetes generados netos en el período (Ventas Ef + Cobros - Egresos). Difiere de la 'Caja Actual' porque esta última incluye el Dinero Inicial de Apertura."
+                            example="Si cobraste Bs. 11.00 en ventas y Bs. 8.00 extra sin gastos, el flujo neto de hoy es Bs. 19.00."
+                          />
+                        </h3>
+                        <div className={`card-value ${pCashBalance < 0 ? 'negative-value' : ''}`}>Bs. {pCashBalance.toFixed(2)}</div>
+                      </SortableCard>
+                    );
+                  }
+                  if (cardId === 'totalIncome') {
+                    return (
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{borderLeft: '4px solid var(--color-green)'}}>
+                        <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                          <span>📈 Ingresos Totales</span>
+                          <HelpTooltip 
+                            title="Ingresos Brutos Combinados (Efectivo + QR)" 
+                            text="Suma total de todas las entradas financieras directas (Ventas Efectivo + QR + Extras). Excluye cobros de préstamos para evitar duplicidades."
+                            example="Suma total de Bs. 11.00 (Ef) + Bs. 6.50 (QR) + Bs. 13.00 (Extras) = Bs. 30.50."
+                          />
+                        </h3>
+                        <div className={`card-value ${pTotalIncome < 0 ? 'negative-value' : ''}`}>Bs. {pTotalIncome.toFixed(2)}</div>
+                      </SortableCard>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+            </SortableContext>
+          </DndContext>
 
           {/* ADMIN EXTRA INCOME REGISTRATION FORM */}
           <div className="card glass-panel" style={{maxWidth: '650px'}}>

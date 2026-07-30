@@ -15,7 +15,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   }
   
   if (allowedRoles && !allowedRoles.includes(userRole)) {
-    if (userRole === 'admin') return <Navigate to="/admin" replace />;
+    if (userRole === 'superadmin' || userRole === 'admin') return <Navigate to="/admin" replace />;
     if (userRole === 'supervisor') return <Navigate to="/supervisor" replace />;
     return <Navigate to="/vendedor" replace />;
   }
@@ -26,7 +26,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 const HomeRedirect = () => {
   const { currentUser, userRole } = useAuth();
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (userRole === 'admin') return <Navigate to="/admin" replace />;
+  if (userRole === 'superadmin' || userRole === 'admin') return <Navigate to="/admin" replace />;
   if (userRole === 'supervisor') return <Navigate to="/supervisor" replace />;
   return <Navigate to="/vendedor" replace />;
 };
@@ -48,7 +48,7 @@ function App() {
           <Route 
             path="/vendedor/*" 
             element={
-              <ProtectedRoute allowedRoles={['vendedor', 'admin']}>
+              <ProtectedRoute allowedRoles={['vendedor', 'admin', 'superadmin']}>
                 <VendorDashboard />
               </ProtectedRoute>
             } 
@@ -56,7 +56,7 @@ function App() {
           <Route 
             path="/supervisor/*" 
             element={
-              <ProtectedRoute allowedRoles={['supervisor', 'admin']}>
+              <ProtectedRoute allowedRoles={['supervisor', 'admin', 'superadmin']}>
                 <SupervisorDashboard />
               </ProtectedRoute>
             } 
@@ -64,7 +64,7 @@ function App() {
           <Route 
             path="/admin/*" 
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
                 <AdminDashboard />
               </ProtectedRoute>
             } 

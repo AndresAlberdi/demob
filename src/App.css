@@ -182,3 +182,25 @@
     border-right-color: var(--border);
   }
 }
+
+/* Colors for dashboard cards */
+:root {
+  --color-green: #10b981;
+  --color-blue: #3b82f6;
+  --color-red: #ef4444;
+  --color-yellow: #f59e0b;
+  --color-guindo: #800000;
+}
+
+[data-theme="dark"] {
+  --color-green: #059669;
+  --color-blue: #2563eb;
+  --color-red: #dc2626;
+  --color-yellow: #d97706;
+  --color-guindo: #a52a2a;
+}
+
+/* Global negative numbers */
+.negative-value {
+  color: var(--color-red) !important;
+}
