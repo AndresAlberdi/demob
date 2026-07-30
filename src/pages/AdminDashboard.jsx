@@ -2713,6 +2713,7 @@ const AdminDashboard = () => {
                   >
                     <option value="vendedor">Vendedor</option>
                     <option value="supervisor">Supervisor</option>
+                    <option value="admin">Administrador</option>
                   </select>
                 </div>
                 <div className="form-group">
@@ -2732,14 +2733,14 @@ const AdminDashboard = () => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <h4 style={{ margin: 0 }}>{u.name}</h4>
                         <span className="badge" style={{ 
-                          background: u.role === 'supervisor' ? 'var(--color-secundario-blue)' : 'var(--color-secundario-yellow)', 
-                          color: u.role === 'supervisor' ? '#ffffff' : 'var(--color-principal)',
+                          background: u.role === 'supervisor' ? 'var(--color-secundario-blue)' : (u.role === 'admin' ? '#0a137c' : 'var(--color-secundario-yellow)'), 
+                          color: u.role === 'supervisor' ? '#ffffff' : (u.role === 'admin' ? '#ffffff' : 'var(--color-principal)'),
                           fontSize: '0.75rem',
                           padding: '0.15rem 0.4rem',
                           fontWeight: 'bold',
                           borderRadius: '8px'
                         }}>
-                          {u.role === 'supervisor' ? 'Supervisor' : 'Vendedor'}
+                          {u.role === 'supervisor' ? 'Supervisor' : (u.role === 'admin' ? 'Administrador' : 'Vendedor')}
                         </span>
                       </div>
                       {editingUser === u.id ? (
