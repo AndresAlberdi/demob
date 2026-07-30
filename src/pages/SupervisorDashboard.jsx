@@ -12,6 +12,7 @@ import {
   limit 
 } from 'firebase/firestore';
 import Navbar from '../components/Navbar';
+import AdminDepositsTab from '../components/AdminDepositsTab';
 import { useAuth } from '../context/AuthContext';
 import { logEvent } from '../utils/logger';
 
@@ -37,6 +38,9 @@ export default function SupervisorDashboard() {
   const [confirmPin, setConfirmPin] = useState('');
   const [pinSubmitting, setPinSubmitting] = useState(false);
 
+  const [banks, setBanks] = useState([]);
+  const [deposits, setDeposits] = useState([]);
+
   useEffect(() => {
     loadProductsAndAudits();
   }, []);
@@ -44,8 +48,16 @@ export default function SupervisorDashboard() {
   const loadProductsAndAudits = async () => {
     setLoading(true);
     try {
-      // Load products
-      const pSnap = await getDocs(collection(db, 'products'));
+      // Load products, banks, and deposits in parallel
+      const [pSnap, bSnap, dSnap] = await Promise.all([
+        getDocs(collection(db, 'products')),
+        getDocs(collection(db, 'banks')),
+        getDocs(query(collection(db, 'deposits'), orderBy('createdAt', 'desc')))
+      ]);
+
+      setBanks(bSnap.docs.map(d => ({id: d.id, ...d.data()})));
+      setDeposits(dSnap.docs.map(d => ({id: d.id, ...d.data()})));
+
       const pList = pSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -266,7 +278,10 @@ export default function SupervisorDashboard() {
               🔍 Revisión de Inventario
             </div>
             <div className={`tab ${activeTab === 'summary' ? 'active' : ''}`} onClick={() => setActiveTab('summary')}>
-              📊 Resumen & Histórico
+              📊 Historial de Auditorías
+            </div>
+            <div className={`tab ${activeTab === 'deposits' ? 'active' : ''}`} onClick={() => setActiveTab('deposits')}>
+              🏦 Depósitos
             </div>
             <div className={`tab ${activeTab === 'losses' ? 'active' : ''}`} onClick={() => setActiveTab('losses')}>
               ⚠️ Reportar Pérdidas
@@ -516,7 +531,18 @@ export default function SupervisorDashboard() {
           </div>
         )}
 
-        {/* TAB 4: REPORTAR PÉRDIDAS */}
+        {/* TAB: DEPOSITS */}
+        {activeTab === 'deposits' && (
+          <AdminDepositsTab 
+            banks={banks} 
+            deposits={deposits} 
+            loadBanksAndDeposits={loadProductsAndAudits} 
+            pCashBalance={999999}
+            userRole="supervisor" 
+          />
+        )}
+
+        {/* TAB 3: REPORTAR PÉRDIDAS */}
         {activeTab === 'losses' && (
           <div className="glass-panel" style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
             <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>⚠️ Reportar Pérdida o Merma (Supervisor)</h3>
@@ -586,7 +612,7 @@ export default function SupervisorDashboard() {
           </div>
         )}
 
-        {/* TAB 3: CAMBIO DE CONTRASEÑA / PIN */}
+        {/* TAB 4: CAMBIO DE CONTRASEÑA / PIN */}
         {activeTab === 'pin' && (
           <div className="glass-panel" style={{ padding: '2rem', maxWidth: '480px', margin: '0 auto' }}>
             <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>🔒 Cambiar mi PIN de Acceso</h3>

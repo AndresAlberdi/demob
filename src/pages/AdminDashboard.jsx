@@ -4,6 +4,7 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStr
 import { CSS } from '@dnd-kit/utilities';
 import { SortableTab } from '../components/SortableTab';
 import { SortableCard } from '../components/SortableCard';
+import AdminDepositsTab from '../components/AdminDepositsTab';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { collection, query, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy, serverTimestamp, increment } from 'firebase/firestore';
@@ -141,7 +142,13 @@ const AdminDashboard = () => {
   ];
   const [tabOrder, setTabOrder] = useState(() => {
     const saved = localStorage.getItem('adminTabOrder');
-    return saved ? JSON.parse(saved) : defaultTabs.map(t => t.id);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      const defaultIds = defaultTabs.map(t => t.id);
+      const missing = defaultIds.filter(id => !parsed.includes(id));
+      return [...parsed, ...missing];
+    }
+    return defaultTabs.map(t => t.id);
   });
   
   // DnD state for cards
@@ -3001,6 +3008,16 @@ const AdminDashboard = () => {
           </table>
         </div>
       </div>
+    )}
+
+    {!isLoading && activeTab === 'deposits' && (
+      <AdminDepositsTab 
+        banks={banks} 
+        deposits={deposits} 
+        loadBanksAndDeposits={loadBanksAndDeposits} 
+        pCashBalance={pCashBalance} 
+        userRole={userRole} 
+      />
     )}
 
       </div>
