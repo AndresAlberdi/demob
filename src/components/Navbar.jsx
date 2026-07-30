@@ -16,6 +16,7 @@ export default function Navbar() {
   };
 
   const getRoleBadge = () => {
+    if (userRole === 'superadmin') return { label: 'Super Admin', bg: '#000000', color: '#ffffff' };
     if (userRole === 'admin') return { label: 'Administrador', bg: '#0a137c', color: '#ffffff' };
     if (userRole === 'supervisor') return { label: 'Supervisor', bg: '#276cd3', color: '#ffffff' };
     return { label: 'Vendedor', bg: '#f3d92e', color: '#0a137c' };
@@ -64,23 +65,27 @@ export default function Navbar() {
             </span>
           </div>
 
-          {/* Role Navigation Switcher (for Admin) */}
-          {userRole === 'admin' && (
-            <div className="role-switcher-group">
-              <button 
-                className={`btn btn-sm ${window.location.pathname.startsWith('/admin') ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => navigate('/admin')}
-                title="Ir a Panel Admin"
-              >
-                ⚙️ Admin
-              </button>
-              <button 
-                className={`btn btn-sm ${window.location.pathname.startsWith('/supervisor') ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => navigate('/supervisor')}
-                title="Ir a Vista Supervisor"
-              >
-                📋 Supervisor
-              </button>
+          {/* Role Navigation Switcher (Cascading access) */}
+          {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'supervisor') && (
+            <div className="role-switcher-group" style={{display: 'flex', gap: '0.5rem'}}>
+              {(userRole === 'superadmin' || userRole === 'admin') && (
+                <button 
+                  className={`btn btn-sm ${window.location.pathname.startsWith('/admin') ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => navigate('/admin')}
+                  title="Ir a Panel Admin"
+                >
+                  ⚙️ Admin
+                </button>
+              )}
+              {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'supervisor') && (
+                <button 
+                  className={`btn btn-sm ${window.location.pathname.startsWith('/supervisor') ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => navigate('/supervisor')}
+                  title="Ir a Vista Supervisor"
+                >
+                  📋 Supervisor
+                </button>
+              )}
               <button 
                 className={`btn btn-sm ${window.location.pathname.startsWith('/vendedor') ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => navigate('/vendedor?from=admin')}

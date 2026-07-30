@@ -48,7 +48,7 @@ function App() {
           <Route 
             path="/vendedor/*" 
             element={
-              <ProtectedRoute allowedRoles={['vendedor', 'admin', 'superadmin']}>
+              <ProtectedRoute allowedRoles={['vendedor', 'supervisor', 'admin', 'superadmin']}>
                 <VendorDashboard />
               </ProtectedRoute>
             } 
