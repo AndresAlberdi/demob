@@ -88,6 +88,9 @@ const Login = () => {
           <div className={`tab ${loginMethod === 'email' ? 'active' : ''}`} onClick={() => setLoginMethod('email')} style={{fontSize: '0.85rem', padding: '0.5rem'}}>
             <UserCircle size={14} style={{display: 'inline', marginRight: '0.25rem'}}/> Admin
           </div>
+          <div className={`tab ${loginMethod === 'superadmin' ? 'active' : ''}`} onClick={() => setLoginMethod('superadmin')} style={{fontSize: '0.85rem', padding: '0.5rem', cursor: 'pointer'}} title="Superadmin">
+            ⚙️
+          </div>
         </div>
 
         {error && <div className="error-message">{error}</div>}
@@ -95,7 +98,7 @@ const Login = () => {
         {/* Admin Form (Always in DOM for Chrome Password Manager detection) */}
         <form 
           onSubmit={handleEmailSubmit} 
-          style={{ display: loginMethod === 'email' ? 'block' : 'none' }}
+          style={{ display: (loginMethod === 'email' || loginMethod === 'superadmin') ? 'block' : 'none' }}
         >
           <div className="form-group">
             <label htmlFor="admin-email">Correo Electrónico</label>
@@ -106,7 +109,7 @@ const Login = () => {
               className="input-field" 
               placeholder="admin@demo.com"
               autoComplete="username"
-              required={loginMethod === 'email'}
+              required={loginMethod === 'email' || loginMethod === 'superadmin'}
             />
           </div>
           
@@ -119,7 +122,7 @@ const Login = () => {
               className="input-field" 
               placeholder="••••••••"
               autoComplete="current-password"
-              required={loginMethod === 'email'}
+              required={loginMethod === 'email' || loginMethod === 'superadmin'}
             />
           </div>
           
@@ -131,7 +134,7 @@ const Login = () => {
             {isSubmitting ? (
               <span className="flex-center"><Loader2 className="spinner" size={18} style={{marginRight: '0.5rem'}} /> Iniciando...</span>
             ) : (
-              'Ingresar como Admin'
+              loginMethod === 'superadmin' ? 'Ingresar como Superadmin' : 'Ingresar como Admin'
             )}
           </button>
         </form>
