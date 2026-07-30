@@ -3,6 +3,7 @@ import { db } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { X, Building } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { logEvent } from '../utils/logger';
 
 export default function DepositWithdrawalModal({ isOpen, onClose, banks, maxAmount, onSuccess }) {
   const { currentUser } = useAuth();
@@ -49,6 +50,8 @@ export default function DepositWithdrawalModal({ isOpen, onClose, banks, maxAmou
         createdAt: serverTimestamp(),
         // Usamos createdAt en AdminDashboard.jsx para filtrar por checkTs
       });
+      
+      await logEvent('DEPOSIT_CREATED', currentUser?.email, `Depósito de Bs. ${val.toFixed(2)} registrado en banco ${selectedBank ? selectedBank.name : 'Desconocido'} por ${currentUser.name || currentUser.email}`, val);
 
       if (onSuccess) onSuccess();
       onClose();

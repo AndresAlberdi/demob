@@ -155,10 +155,13 @@ const AdminDashboard = () => {
   });
   
   // DnD state for cards
-  const defaultCards = ['cashSales', 'qrSales', 'purchases', 'loans', 'extraIncome', 'totalIncome', 'netCashFlow'];
+  const defaultCards = ['cashSales', 'qrSales', 'purchases', 'loans', 'extraIncome', 'depositsReport', 'totalIncome', 'netCashFlow'];
   const [cardOrder, setCardOrder] = useState(() => {
     const saved = localStorage.getItem('adminCardOrder');
-    return saved ? JSON.parse(saved) : defaultCards;
+    let order = saved ? JSON.parse(saved) : defaultCards;
+    const missing = defaultCards.filter(c => !order.includes(c));
+    if (missing.length > 0) order = [...order, ...missing];
+    return order;
   });
 
   const sensors = useSensors(
@@ -1441,6 +1444,21 @@ const AdminDashboard = () => {
                       </SortableCard>
                     );
                   }
+                  if (cardId === 'depositsReport') {
+                    return (
+                      <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{background: 'var(--card-bg-azul)', borderLeft: '4px solid var(--color-blue)'}}>
+                        <h3 className="card-title" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+                          <span>🏦 Depósitos en Banco</span>
+                          <HelpTooltip 
+                            title="Depósitos realizados" 
+                            text="Total de dinero retirado de la caja física y depositado en cuentas bancarias. Este valor se resta del Flujo Neto."
+                            example="Se depositaron Bs. 500.00 en la cuenta."
+                          />
+                        </h3>
+                        <div className={`card-value ${pTotalDeposits > 0 ? 'negative-value' : ''}`} style={{ color: pTotalDeposits > 0 ? 'var(--color-red)' : '' }}>Bs. {pTotalDeposits.toFixed(2)}</div>
+                      </SortableCard>
+                    );
+                  }
                   if (cardId === 'netCashFlow') {
                     return (
                       <SortableCard key={cardId} id={cardId} className="card glass-panel" style={{background: 'var(--card-bg-amarillo)', borderLeft: '4px solid var(--color-yellow)'}}>
@@ -1448,8 +1466,8 @@ const AdminDashboard = () => {
                           <span>💰 Flujo Neto Efectivo</span>
                           <HelpTooltip 
                             title="Flujo Neto de Efectivo del Período" 
-                            text="Saldo acumulado de billetes generados netos en el período (Ventas Ef + Cobros - Egresos). Difiere de la 'Caja Actual' porque esta última incluye el Dinero Inicial de Apertura."
-                            example="Si cobraste Bs. 11.00 en ventas y Bs. 8.00 extra sin gastos, el flujo neto de hoy es Bs. 19.00."
+                            text="Saldo físico acumulado (Ventas Ef + Cobros + Dinero Inicial + Extras - Egresos - Depósitos en Banco). Es el dinero que DEBE existir en caja física."
+                            example="Si cobraste Bs. 11.00 en ventas y depositaste Bs. 5.00 al banco, el flujo neto de hoy refleja esa deducción."
                           />
                         </h3>
                         <div className={`card-value ${pCashBalance < 0 ? 'negative-value' : ''}`}>Bs. {pCashBalance.toFixed(2)}</div>
@@ -2672,10 +2690,10 @@ const AdminDashboard = () => {
                         </td>
                         <td style={{padding: '0.5rem'}}>Bs. {(sh.startCash || 0).toFixed(2)}</td>
                         <td style={{padding: '0.5rem', color: 'var(--secondary-color)', fontWeight: '500'}}>+Bs. {cashSales.toFixed(2)}</td>
-                        <td style={{padding: '0.5rem', color: 'var(--danger)'}}>-Bs. {shiftExpenses.toFixed(2)}</td>
+                        <td style={{padding: '0.5rem', color: 'var(--color-red)'}}>-Bs. {shiftExpenses.toFixed(2)}</td>
                         <td style={{padding: '0.5rem', fontWeight: 'bold'}}>Bs. {(sh.expectedCash !== undefined ? sh.expectedCash : expectedCash).toFixed(2)}</td>
                         <td style={{padding: '0.5rem'}}>{sh.endCash !== undefined ? `Bs. ${sh.endCash.toFixed(2)}` : '-'}</td>
-                        <td style={{padding: '0.5rem', color: sh.difference < 0 ? 'var(--danger)' : (sh.difference > 0 ? 'var(--secondary-color)' : 'inherit'), fontWeight: 'bold'}}>
+                        <td style={{padding: '0.5rem', color: sh.difference < 0 ? 'var(--color-red)' : (sh.difference > 0 ? 'var(--color-green)' : 'inherit'), fontWeight: 'bold'}}>
                           {sh.difference !== undefined ? `Bs. ${sh.difference.toFixed(2)}` : '-'}
                         </td>
                         <td style={{padding: '0.5rem', background: 'rgba(59, 130, 246, 0.05)', fontWeight: 'bold', color: '#1e40af'}}>

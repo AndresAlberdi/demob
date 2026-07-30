@@ -4,6 +4,7 @@ import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from '
 import { Building, Plus, Trash2, CheckCircle, Clock } from 'lucide-react';
 import DepositWithdrawalModal from './DepositWithdrawalModal';
 import { useAuth } from '../context/AuthContext';
+import { logEvent } from '../utils/logger';
 
 export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits, pCashBalance, userRole }) {
   const { currentUser } = useAuth();
@@ -21,6 +22,7 @@ export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits
         accountNumber: newBankForm.accountNumber,
         createdAt: serverTimestamp()
       });
+      await logEvent('BANK_CREATED', currentUser?.email, `Registrado nuevo banco: ${newBankForm.name} - ${newBankForm.accountNumber}`);
       setNewBankForm({ name: '', accountNumber: '' });
       await loadBanksAndDeposits();
     } catch (err) {
@@ -34,7 +36,9 @@ export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits
   const handleDeleteBank = async (id) => {
     if (!window.confirm('¿Eliminar este banco?')) return;
     try {
+      const bankToDel = banks.find(b => b.id === id);
       await deleteDoc(doc(db, 'banks', id));
+      await logEvent('BANK_DELETED', currentUser?.email, `Eliminado banco: ${bankToDel ? bankToDel.name : 'ID ' + id}`);
       await loadBanksAndDeposits();
     } catch (err) {
       console.error(err);
@@ -44,9 +48,11 @@ export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits
   const handleConfirmDeposit = async (id) => {
     if (!window.confirm('¿Confirmar que este depósito ha sido procesado?')) return;
     try {
+      const dep = deposits.find(d => d.id === id);
       await updateDoc(doc(db, 'deposits', id), {
         status: 'CONFIRMADO'
       });
+      await logEvent('DEPOSIT_CONFIRMED', currentUser?.email, `Depósito confirmado por Bs. ${dep?.amount} en banco ${dep?.bankName}`);
       await loadBanksAndDeposits();
     } catch (err) {
       console.error(err);
