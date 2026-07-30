@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase';
 import { collection, query, getDocs, getDoc, doc, updateDoc, setDoc, addDoc, deleteDoc, where, orderBy, serverTimestamp, increment } from 'firebase/firestore';
 import { LogOut, Users, BarChart3, Settings, ShieldAlert, Package, Check, X, Upload, Clock, Info, Activity, Download, Filter, FileText, Calendar, ListFilter, PlusCircle, ArrowDownCircle, DollarSign, Loader2 } from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { parseAndUploadCSV } from '../utils/csvParser';
 import { exportToCSV } from '../utils/csvExporter';
 import { exportAllToExcel } from '../utils/excelExporter';
@@ -98,6 +98,9 @@ const HelpTooltip = ({ title, text, example }) => {
 const AdminDashboard = () => {
   const { logout, currentUser, userRole } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const effectiveRole = searchParams.get('role') || userRole;
   const [activeTab, setActiveTab] = useState('reports'); // reports, inventory, shifts, users, losses, logs
   const [isLoading, setIsLoading] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
@@ -1305,7 +1308,7 @@ const AdminDashboard = () => {
               {tabOrder.map(tabId => {
                 const tab = defaultTabs.find(t => t.id === tabId);
                 if (!tab) return null;
-                if (tab.restricted && userRole === 'admin') return null; // restrict some tabs for admin
+                if (tab.restricted && effectiveRole === 'admin') return null; // restrict some tabs for admin
                 return (
                   <SortableTab 
                     key={tabId} 
@@ -3016,7 +3019,7 @@ const AdminDashboard = () => {
         deposits={deposits} 
         loadBanksAndDeposits={loadBanksAndDeposits} 
         pCashBalance={pCashBalance} 
-        userRole={userRole} 
+        userRole={effectiveRole} 
       />
     )}
 

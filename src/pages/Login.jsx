@@ -89,7 +89,7 @@ const Login = () => {
             <UserCircle size={14} style={{display: 'inline', marginRight: '0.25rem'}}/> Admin
           </div>
           <div className={`tab ${loginMethod === 'superadmin' ? 'active' : ''}`} onClick={() => setLoginMethod('superadmin')} style={{fontSize: '0.85rem', padding: '0.5rem', cursor: 'pointer'}} title="Superadmin">
-            ⚙️
+            ⭐️
           </div>
         </div>
 

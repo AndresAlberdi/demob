@@ -1,10 +1,11 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function Navbar() {
   const { currentUser, userRole, logout, theme, toggleTheme } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = async () => {
     try {
@@ -68,18 +69,27 @@ export default function Navbar() {
           {/* Role Navigation Switcher (Cascading access) */}
           {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'supervisor') && (
             <div className="role-switcher-group" style={{display: 'flex', gap: '0.5rem'}}>
+              {userRole === 'superadmin' && (
+                <button 
+                  className={`btn btn-sm ${location.pathname.startsWith('/admin') && !location.search.includes('role=admin') ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => navigate('/admin')}
+                  title="Ir a Panel Superadmin"
+                >
+                  👑 Superadmin
+                </button>
+              )}
               {(userRole === 'superadmin' || userRole === 'admin') && (
                 <button 
-                  className={`btn btn-sm ${window.location.pathname.startsWith('/admin') ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => navigate('/admin')}
+                  className={`btn btn-sm ${location.pathname.startsWith('/admin') && (userRole === 'admin' || location.search.includes('role=admin')) ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => navigate(userRole === 'superadmin' ? '/admin?role=admin' : '/admin')}
                   title="Ir a Panel Admin"
                 >
-                  ⚙️ Admin
+                  ⭐️ Admin
                 </button>
               )}
               {(userRole === 'superadmin' || userRole === 'admin' || userRole === 'supervisor') && (
                 <button 
-                  className={`btn btn-sm ${window.location.pathname.startsWith('/supervisor') ? 'btn-primary' : 'btn-secondary'}`}
+                  className={`btn btn-sm ${location.pathname.startsWith('/supervisor') ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => navigate('/supervisor')}
                   title="Ir a Vista Supervisor"
                 >
@@ -87,7 +97,7 @@ export default function Navbar() {
                 </button>
               )}
               <button 
-                className={`btn btn-sm ${window.location.pathname.startsWith('/vendedor') ? 'btn-primary' : 'btn-secondary'}`}
+                className={`btn btn-sm ${location.pathname.startsWith('/vendedor') ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => navigate('/vendedor?from=admin')}
                 title="Ir a Punto de Venta (POS)"
               >
