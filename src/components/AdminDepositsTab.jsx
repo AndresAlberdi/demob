@@ -3,8 +3,10 @@ import { db } from '../firebase';
 import { collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { Building, Plus, Trash2, CheckCircle, Clock } from 'lucide-react';
 import DepositWithdrawalModal from './DepositWithdrawalModal';
+import { useAuth } from '../context/AuthContext';
 
 export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits, pCashBalance, userRole }) {
+  const { currentUser } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBankForm, setNewBankForm] = useState({ name: '', accountNumber: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -162,7 +164,7 @@ export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits
                       </span>
                     </td>
                     <td style={{textAlign: 'center'}}>
-                      {!isConfirmed && (
+                      {!isConfirmed && (userRole === 'superadmin' || d.createdBy === currentUser?.name) && (
                         <button className="btn btn-sm" onClick={() => handleConfirmDeposit(d.id)} style={{backgroundColor: 'var(--color-green)', color: 'white'}}>
                           Confirmar
                         </button>

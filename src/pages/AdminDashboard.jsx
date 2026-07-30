@@ -1248,10 +1248,13 @@ const AdminDashboard = () => {
   const safeShifts = Array.isArray(shifts) ? shifts : [];
   const pInitialCash = safeShifts.filter(s => checkTs(s?.startTime || s?.timestamp)).reduce((acc, s) => acc + (parseFloat(s?.startCash) || 0), 0);
 
+  // DEPOSITS (Subtract from physical cash)
+  const pTotalDeposits = periodDeposits.reduce((acc, d) => acc + (parseFloat(d?.amount) || 0), 0);
+
   // SALDO ACUMULADO EN CAJA REAL (NUNCA NEGATIVO)
   const latestShift = safeShifts[0];
   const latestShiftStartCash = latestShift ? (parseFloat(latestShift.startCash) || 0) : 0;
-  const rawCashBalance = pExtraCash + pLoanRepaymentsCash + pCashSales + latestShiftStartCash - pPurchases;
+  const rawCashBalance = pExtraCash + pLoanRepaymentsCash + pCashSales + latestShiftStartCash - pPurchases - pTotalDeposits;
   const pCashBalance = Math.max(0, rawCashBalance);
 
   // Active shift calculations

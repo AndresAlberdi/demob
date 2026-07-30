@@ -45,7 +45,7 @@ export default function DepositWithdrawalModal({ isOpen, onClose, banks, maxAmou
         bankName: selectedBank ? `${selectedBank.name} - ${selectedBank.accountNumber}` : 'Banco Desconocido',
         observations: observations,
         status: 'EN PROCESO', // "EN PROCESO" o "CONFIRMADO"
-        createdBy: currentUser.email,
+        createdBy: currentUser.name || currentUser.email,
         createdAt: serverTimestamp(),
         // Usamos createdAt en AdminDashboard.jsx para filtrar por checkTs
       });
