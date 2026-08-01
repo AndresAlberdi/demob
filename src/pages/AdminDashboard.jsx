@@ -1269,7 +1269,8 @@ const AdminDashboard = () => {
       return acc;
     }, 0);
     const shiftExpenses = (Array.isArray(orders) ? orders : []).filter(o => o?.shiftId === activeShiftDoc.id).reduce((acc, o) => acc + (parseFloat(o.amount) || 0), 0);
-    activeShiftCash = Math.max(0, (parseFloat(activeShiftDoc.startCash) || 0) + shiftSalesCash - shiftExpenses);
+    const shiftDeposits = (Array.isArray(deposits) ? deposits : []).filter(d => d?.shiftId === activeShiftDoc.id).reduce((acc, d) => acc + (parseFloat(d.amount) || 0), 0);
+    activeShiftCash = Math.max(0, (parseFloat(activeShiftDoc.startCash) || 0) + shiftSalesCash - shiftExpenses - shiftDeposits);
   }
 
   return (
@@ -1469,7 +1470,7 @@ const AdminDashboard = () => {
                             example="Si cobraste Bs. 11.00 en ventas y depositaste Bs. 5.00 al banco, el flujo neto de hoy refleja esa deducción."
                           />
                         </h3>
-                        <div className={`card-value ${pCashBalance < 0 ? 'negative-value' : ''}`}>Bs. {pCashBalance.toFixed(2)}</div>
+                        <div className={`card-value ${(activeShiftDoc ? activeShiftCash : 0) < 0 ? 'negative-value' : ''}`}>Bs. {(activeShiftDoc ? activeShiftCash : 0).toFixed(2)}</div>
                       </SortableCard>
                     );
                   }
@@ -3039,8 +3040,9 @@ const AdminDashboard = () => {
         banks={banks} 
         deposits={deposits} 
         loadBanksAndDeposits={loadBanksAndDeposits} 
-        pCashBalance={pCashBalance} 
-        userRole={effectiveRole} 
+        pCashBalance={activeShiftDoc ? activeShiftCash : 0}
+        userRole={effectiveRole}
+        activeShiftId={activeShiftDoc?.id}
       />
     )}
 

@@ -6,7 +6,7 @@ import DepositWithdrawalModal from './DepositWithdrawalModal';
 import { useAuth } from '../context/AuthContext';
 import { logEvent } from '../utils/logger';
 
-export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits, pCashBalance, userRole }) {
+export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits, pCashBalance, userRole, activeShiftId }) {
   const { currentUser } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newBankForm, setNewBankForm] = useState({ name: '', accountNumber: '' });
@@ -195,6 +195,7 @@ export default function AdminDepositsTab({ banks, deposits, loadBanksAndDeposits
         banks={banks} 
         maxAmount={pCashBalance} 
         onSuccess={loadBanksAndDeposits} 
+        activeShiftId={activeShiftId}
       />
     </div>
   );

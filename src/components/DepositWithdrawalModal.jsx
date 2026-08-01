@@ -5,7 +5,7 @@ import { X, Building } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { logEvent } from '../utils/logger';
 
-export default function DepositWithdrawalModal({ isOpen, onClose, banks, maxAmount, onSuccess }) {
+export default function DepositWithdrawalModal({ isOpen, onClose, banks, maxAmount, onSuccess, activeShiftId }) {
   const { currentUser } = useAuth();
   const [bankId, setBankId] = useState('');
   const [amount, setAmount] = useState('');
@@ -48,6 +48,7 @@ export default function DepositWithdrawalModal({ isOpen, onClose, banks, maxAmou
         status: 'EN PROCESO', // "EN PROCESO" o "CONFIRMADO"
         createdBy: currentUser.name || currentUser.email,
         createdAt: serverTimestamp(),
+        shiftId: activeShiftId || null,
         // Usamos createdAt en AdminDashboard.jsx para filtrar por checkTs
       });
       

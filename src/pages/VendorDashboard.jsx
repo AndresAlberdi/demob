@@ -224,6 +224,12 @@ const VendorDashboard = () => {
         ordersSnap.forEach(d => {
           cashBalance -= (parseFloat(d.data().amount) || 0);
         });
+
+        const depositsQuery = query(collection(db, "deposits"), where("shiftId", "==", globalShiftId));
+        const depositsSnap = await getDocs(depositsQuery);
+        depositsSnap.forEach(d => {
+          cashBalance -= (parseFloat(d.data().amount) || 0);
+        });
         
         // Evita caja negativa en todo momento
         setCurrentCash(Math.max(0, cashBalance));
@@ -286,7 +292,17 @@ const VendorDashboard = () => {
           time: formatTime(d.data().timestamp)
         }));
 
-        const sortedOps = [...sList, ...oList, ...lList].sort((a,b) => (b.rawTime?.seconds || 0) - (a.rawTime?.seconds || 0));
+        const dList = depositsSnap.docs.map(d => ({
+          id: d.id,
+          opType: 'Depósito a Banco',
+          detail: `${d.data().bankName || 'Banco'} - ${d.data().observations || ''}`,
+          amount: -(parseFloat(d.data().amount) || 0),
+          method: 'Efectivo',
+          rawTime: d.data().createdAt,
+          time: formatTime(d.data().createdAt)
+        }));
+
+        const sortedOps = [...sList, ...oList, ...lList, ...dList].sort((a,b) => (b.rawTime?.seconds || 0) - (a.rawTime?.seconds || 0));
         setShiftOperations(sortedOps);
       } else {
         setActiveShift(null);
