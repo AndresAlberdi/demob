@@ -9,7 +9,8 @@ import {
   serverTimestamp, 
   query, 
   orderBy, 
-  limit 
+  limit,
+  where
 } from 'firebase/firestore';
 import Navbar from '../components/Navbar';
 import AdminDepositsTab from '../components/AdminDepositsTab';
@@ -40,6 +41,7 @@ export default function SupervisorDashboard() {
 
   const [banks, setBanks] = useState([]);
   const [deposits, setDeposits] = useState([]);
+  const [activeShiftId, setActiveShiftId] = useState(null);
 
   useEffect(() => {
     loadProductsAndAudits();
@@ -48,15 +50,17 @@ export default function SupervisorDashboard() {
   const loadProductsAndAudits = async () => {
     setLoading(true);
     try {
-      // Load products, banks, and deposits in parallel
-      const [pSnap, bSnap, dSnap] = await Promise.all([
+      // Load products, banks, deposits, and active shift in parallel
+      const [pSnap, bSnap, dSnap, sSnap] = await Promise.all([
         getDocs(collection(db, 'products')),
         getDocs(collection(db, 'banks')),
-        getDocs(query(collection(db, 'deposits'), orderBy('createdAt', 'desc')))
+        getDocs(query(collection(db, 'deposits'), orderBy('createdAt', 'desc'))),
+        getDocs(query(collection(db, 'shifts'), where('status', '==', 'open'), limit(1)))
       ]);
 
       setBanks(bSnap.docs.map(d => ({id: d.id, ...d.data()})));
       setDeposits(dSnap.docs.map(d => ({id: d.id, ...d.data()})));
+      setActiveShiftId(sSnap.docs.length > 0 ? sSnap.docs[0].id : null);
 
       const pList = pSnap.docs.map(doc => ({
         id: doc.id,
@@ -539,6 +543,7 @@ export default function SupervisorDashboard() {
             loadBanksAndDeposits={loadProductsAndAudits} 
             pCashBalance={999999}
             userRole="supervisor" 
+            activeShiftId={activeShiftId}
           />
         )}
 
