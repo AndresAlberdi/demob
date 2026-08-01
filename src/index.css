@@ -403,6 +403,10 @@ body {
   color: var(--primary-color);
 }
 
+[data-theme="dark"] .card-value {
+  color: var(--text-primary);
+}
+
 /* Search bar */
 .search-bar {
   position: relative;
