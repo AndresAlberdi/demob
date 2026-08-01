@@ -112,7 +112,7 @@ export default function Navbar() {
             className="theme-toggle-btn"
             title={`Cambiar a modo ${theme === 'dark' ? 'claro' : 'oscuro'}`}
           >
-            {theme === 'dark' ? '☀️ Modo Claro' : '🌙 Modo Oscuro'}
+            {theme === 'dark' ? '☀️' : '🌙'}
           </button>
 
           {/* Logout Button */}

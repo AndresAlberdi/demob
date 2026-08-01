@@ -1256,8 +1256,7 @@ const AdminDashboard = () => {
 
   // SALDO ACUMULADO EN CAJA REAL (NUNCA NEGATIVO)
   const latestShift = safeShifts[0];
-  const latestShiftStartCash = latestShift ? (parseFloat(latestShift.startCash) || 0) : 0;
-  const rawCashBalance = pExtraCash + pLoanRepaymentsCash + pCashSales + latestShiftStartCash - pPurchases - pTotalDeposits;
+  const rawCashBalance = pExtraCash + pLoanRepaymentsCash + pCashSales + pInitialCash - pPurchases - pTotalDeposits;
   const pCashBalance = Math.max(0, rawCashBalance);
 
   // Active shift calculations
@@ -1455,7 +1454,7 @@ const AdminDashboard = () => {
                             example="Se depositaron Bs. 500.00 en la cuenta."
                           />
                         </h3>
-                        <div className={`card-value ${pTotalDeposits > 0 ? 'negative-value' : ''}`} style={{ color: pTotalDeposits > 0 ? 'var(--color-red)' : '' }}>Bs. {pTotalDeposits.toFixed(2)}</div>
+                        <div className="card-value">Bs. {pTotalDeposits.toFixed(2)}</div>
                       </SortableCard>
                     );
                   }
