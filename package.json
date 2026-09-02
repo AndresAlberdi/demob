@@ -17,7 +17,7 @@
     "date-fns": "^4.4.0",
     "firebase": "^12.16.0",
     "lucide-react": "^1.25.0",
-    "papaparse": "^5.5.4",
+    "papaparse": "^5.7.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",
